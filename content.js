@@ -146,6 +146,12 @@
     localStorage.setItem(DEBUG_LOG_KEY, JSON.stringify(state.debugLogs.slice(-400)));
   }
 
+  function clearRuntimeLogs() {
+    state.debugLogs = [];
+    localStorage.removeItem(DEBUG_LOG_KEY);
+    updateRuntimeLogPreview(null);
+  }
+
   function loadGreetedHrefs() {
     try {
       return new Set(JSON.parse(localStorage.getItem(GREETED_HREFS_KEY) || "[]"));
@@ -251,6 +257,18 @@
     });
   }
 
+  function storageLocalRemove(keys) {
+    return new Promise(resolve => {
+      if (typeof chrome === "undefined" || !chrome.storage?.local) {
+        resolve(false);
+        return;
+      }
+      chrome.storage.local.remove(keys, () => {
+        resolve(!chrome.runtime?.lastError);
+      });
+    });
+  }
+
   function maskApiKey(apiKey) {
     const key = String(apiKey || "").trim();
     if (!key) return "";
@@ -342,6 +360,25 @@
     }
     updateAiKeyState();
     return true;
+  }
+
+  async function clearAiKeySettings() {
+    const removed = await storageLocalRemove([AI_STORAGE_KEY]);
+    localStorage.removeItem(AI_SETTINGS_KEY);
+    state.aiSettings = {
+      provider: "deepseek",
+      apiKey: "",
+      hasKey: false,
+      model: state.aiSettings.model || "deepseek-v4-flash"
+    };
+    const keyInput = document.querySelector("#baf-ai-key");
+    if (keyInput) {
+      keyInput.value = "";
+      keyInput.dataset.maskedKey = "";
+      keyInput.placeholder = "sk-...";
+    }
+    updateAiKeyState("已清除");
+    return removed;
   }
 
   function loadAiStrategy() {
@@ -876,11 +913,11 @@
   }
 
   function normalizeLlmJudgement(parsed, localResult, filterResult) {
-    const score = safeNumber(parsed?.score, localResult.score, 0, 100);
     const hits = Array.isArray(parsed?.hits) ? parsed.hits.map(norm).filter(Boolean) : [];
     const negatives = Array.isArray(parsed?.negatives) ? parsed.negatives.map(norm).filter(Boolean) : [];
     const reviewNotes = Array.isArray(parsed?.reviewNotes) ? parsed.reviewNotes.map(norm).filter(Boolean) : [];
     const hardExcluded = Boolean(parsed?.hardExcluded || filterResult.hardExcluded);
+    const score = safeNumber(parsed?.score, localResult.score, 1, 100);
     const action = normalizeLlmAction(parsed?.action || parsed?.recommendation, score, hardExcluded);
     return {
       score,
@@ -926,7 +963,7 @@
         filterNotes: filterResult.notes
       },
       outputSchema: {
-        score: "0-100 integer",
+        score: "1-100 integer",
         action: "favorite | review | exclude",
         hits: ["命中的正向理由"],
         negatives: ["扣分或排除理由"],
@@ -951,8 +988,9 @@
           "你是 BOSS 直聘岗位筛选助手。必须只返回 JSON 对象，不要 Markdown。",
           "你要根据用户的岗位性质、目标方向、薪资边界、加分词和排除词判断岗位是否值得收藏。",
           "本地规则结果只是参考；最终 score/action/mainReason 必须由你独立判断。",
+          "score 必须是 1-100 的细分整数分，按岗位匹配度自由评分；不要只给 55、60、70 这类粗略阈值分。",
           "如果岗位性质或目标方向不匹配，不能给 favorite；高风险、明显不相关或命中硬排除时 action=exclude。",
-          "action 只能是 favorite、review、exclude。score 必须是 0 到 100 的整数。"
+          "action 只能是 favorite、review、exclude。收藏线和复核线只用于动作建议，不限制 score 的具体数值。"
         ].join("\n")
       },
       {
@@ -1304,7 +1342,7 @@
     if (/售前|解决方案|方案|顾问|poc|pre[-\s]?sales/i.test(source)) return "presales";
     if (/产品经理|产品运营|产品负责人|产品总监|产品leader|产品设计|pm/i.test(source)) return "product";
     if (/运营|增长|用户|商家运营|平台运营|渠道运营|活动/.test(source)) return "operations";
-    if (/技术|工程师|开发|研发|算法|前端|后端|测试|运维|架构|java|python/.test(source)) return "tech";
+    if (/技术|工程师|开发|研发|算法|前端|后端|测试|运维|架构|java|python|\bai\b/.test(source)) return "tech";
     if (/销售|bd|商务|大客户|客户经理|客户代表|ka|渠道|拓展/.test(source)) return "sales";
     return "any";
   }
@@ -1325,6 +1363,21 @@
   function visible(el) {
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0 && r.bottom > 120 && r.top < window.innerHeight - 20;
+  }
+
+  function isJavascriptHref(el) {
+    return /^javascript:/i.test(String(el?.getAttribute?.("href") || "").trim());
+  }
+
+  function safeElementClick(el) {
+    if (!el) return false;
+    if (isJavascriptHref(el)) {
+      el.addEventListener("click", event => {
+        event.preventDefault();
+      }, { capture: true, once: true });
+    }
+    el.click();
+    return true;
   }
 
   function jobListContainer() {
@@ -1701,7 +1754,7 @@
     if (before.ok) return before;
 
     before.el.scrollIntoView({ block: "center", inline: "nearest" });
-    before.el.click();
+    safeElementClick(before.el);
     await sleep(900);
 
     const after = favoriteButtonState();
@@ -1767,6 +1820,7 @@
         x.r.top > 120 &&
         x.r.top < window.innerHeight - 20 &&
         x.r.left > window.innerWidth * 0.35 &&
+        !x.el.closest("#boss-ai-autofav-panel") &&
         !/搜索|职位|岗位|公司|query|keyword|search/.test(x.hint) &&
         (/消息|沟通|招呼|输入|发送/.test(x.hint) || x.el.tagName === "TEXTAREA" || x.el.getAttribute("contenteditable") === "true")
       )
@@ -1847,11 +1901,11 @@
     const greetButton = greetingButtonCandidates(detailRoot)[0];
     if (greetButton) {
       greetButton.el.scrollIntoView({ block: "center", inline: "nearest" });
-      greetButton.el.click();
+      safeElementClick(greetButton.el);
       await sleep(800);
     }
 
-    const input = messageInputCandidates(document)[0];
+    const input = messageInputCandidates(detailRoot)[0] || messageInputCandidates(document)[0];
     if (!input) {
       return greetButton ? "已点击沟通按钮，但未找到消息输入框" : "未找到打招呼或消息输入入口";
     }
@@ -1867,7 +1921,7 @@
       return "已写入招呼模板，未找到同一聊天窗口的发送按钮，未发送";
     }
 
-    sendButton.el.click();
+    safeElementClick(sendButton.el);
     const confirmed = await waitForGreetingSendConfirmation(input, template);
     if (!confirmed) {
       return "已点击发送，但未确认发送成功，未计入今日招呼";
@@ -2212,9 +2266,22 @@
     return Math.min(max, Math.max(min, next));
   }
 
+  function readThresholdInput() {
+    const input = document.querySelector("#baf-threshold");
+    const raw = String(input?.value ?? "").trim();
+    if (raw === "") return config.threshold;
+    return safeNumber(raw, config.threshold, REVIEW_THRESHOLD + 1, 100);
+  }
+
+  function normalizeThresholdInput() {
+    const next = readThresholdInput();
+    config.threshold = next;
+    setPanelValue("#baf-threshold", next);
+    readPanelConfig();
+  }
+
   function readPanelConfig() {
-    config.threshold = safeNumber(document.querySelector("#baf-threshold")?.value, config.threshold, REVIEW_THRESHOLD + 1);
-    setPanelValue("#baf-threshold", config.threshold);
+    config.threshold = readThresholdInput();
     config.maxJobs = safeNumber(document.querySelector("#baf-max")?.value, config.maxJobs, 1);
     config.filters.jobNature = norm(document.querySelector("#baf-job-nature")?.value || "");
     config.filters.targetKeywords = parseKeywordList(document.querySelector("#baf-target-keywords")?.value || "");
@@ -2559,6 +2626,14 @@
     setPanelChecked("#baf-include-blank", settings.search?.includeRecommendation ?? true);
     setPanelChecked("#baf-expand-keywords", settings.search?.expandKeywords ?? true);
     setPanelValue("#baf-per-keyword", settings.search?.perKeywordMax || DEFAULT_PER_KEYWORD_MAX);
+  }
+
+  function campaignSearchKeywordsText() {
+    const stored = String(state.campaign?.settings?.search?.keywords || "");
+    const fallback = (state.campaign?.keywords || []).filter(Boolean).join("\n");
+    const greetingTemplate = norm(state.campaign?.settings?.greeting?.template || config.greeting?.template || "");
+    if (stored && greetingTemplate && norm(stored) === greetingTemplate) return fallback;
+    return stored || fallback;
   }
 
   function safetyStopReason() {
@@ -2921,7 +2996,7 @@
     await sleep(120);
     const button = pageSearchButtons()[0];
     if (button) {
-      button.el.click();
+      safeElementClick(button.el);
       return true;
     }
     input.el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
@@ -3112,7 +3187,7 @@
     setPanelValue("#baf-target-keywords", (config.filters.targetKeywords?.length ? config.filters.targetKeywords : DEFAULT_TARGET_KEYWORDS).join("，"));
     setPanelValue("#baf-salary-min", config.filters.salaryMin);
     setPanelValue("#baf-salary-max", config.filters.salaryMax);
-    setPanelValue("#baf-keywords", state.campaign.settings?.search?.keywords || (state.campaign.keywords || []).filter(Boolean).join("\n"));
+    setPanelValue("#baf-keywords", campaignSearchKeywordsText());
     setPanelValue("#baf-per-keyword", state.campaign.perKeywordMax);
     setPanelValue("#baf-daily-scan-limit", config.safety.dailyScanLimit);
     setPanelValue("#baf-daily-favorite-limit", config.safety.dailyFavoriteLimit);
@@ -3328,6 +3403,7 @@
               <input id="baf-ai-model" class="baf-ai-model" value="${escapeAttr(state.aiSettings.model || "deepseek-v4-flash")}" />
               <button id="baf-show-key" type="button" class="baf-mini-primary">显示 Key</button>
               <button id="baf-save-key" type="button" class="baf-mini-primary">保存 Key</button>
+              <button id="baf-clear-ai-key" type="button" class="baf-muted">清除 Key</button>
               <span id="baf-ai-key-state" class="baf-ai-key-state">${state.aiSettings.hasKey ? "已保存" : "未保存"}</span>
             </div>
             <div class="baf-hint">API 地址固定；Key 保存在扩展私有存储中，AI 请求由后台脚本读取 Key 并添加 Authorization。</div>
@@ -3395,6 +3471,7 @@
             <button id="baf-copy-failure-only" class="baf-mini-primary">仅复制收藏失败</button>
             <button id="baf-clear-failures" class="baf-mini-primary">清空收藏失败</button>
             <button id="baf-copy-runtime-log" class="baf-muted">复制运行日志</button>
+            <button id="baf-clear-runtime-log" class="baf-muted">清空运行日志</button>
             <button id="baf-debug" class="baf-muted">复制诊断</button>
             <button id="baf-clear" class="baf-muted">清空表</button>
           </div>
@@ -4172,7 +4249,17 @@
     panel.addEventListener("change", event => {
       if (event.target.closest(".baf-feedback")) return;
       if (event.target.matches("#baf-ai-key")) return;
+      if (event.target.matches("#baf-threshold")) {
+        normalizeThresholdInput();
+        return;
+      }
       schedulePanelSettingsSave();
+    });
+    panel.querySelector("#baf-threshold")?.addEventListener("keydown", event => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      normalizeThresholdInput();
+      event.target.blur();
     });
 
     const setScanMode = mode => {
@@ -4267,6 +4354,11 @@
     });
     panel.querySelector("#baf-save-key")?.addEventListener("click", async () => {
       await saveAiSettingsFromPanel();
+    });
+    panel.querySelector("#baf-clear-ai-key")?.addEventListener("click", async () => {
+      if (!window.confirm("确认清除已保存的第三方大模型 Key 吗？清除后需要重新填写才能启动扫描。")) return;
+      const cleared = await clearAiKeySettings();
+      updateStatus(statusSummary(cleared ? "AI Key 已从扩展私有存储清除。" : "AI Key 清除失败，请检查扩展存储权限。"));
     });
     panel.querySelector("#baf-ai-model")?.addEventListener("change", async () => {
       state.aiSettings.model = String(panel.querySelector("#baf-ai-model")?.value || state.aiSettings.model || "deepseek-v4-flash").trim();
@@ -4391,6 +4483,11 @@
       await navigator.clipboard.writeText(runtimeLogText());
       debugLog("runtime_log_copy");
       updateStatus(statusSummary(`运行日志已复制，共 ${state.debugLogs.length} 条。`));
+    });
+    panel.querySelector("#baf-clear-runtime-log")?.addEventListener("click", () => {
+      if (!window.confirm("确认清空运行日志吗？")) return;
+      clearRuntimeLogs();
+      updateStatus(statusSummary("运行日志已清空。"));
     });
     panel.querySelector("#baf-debug").addEventListener("click", async () => {
       debugLog("diagnostics_copy");
