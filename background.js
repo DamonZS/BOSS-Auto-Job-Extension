@@ -3,7 +3,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   (async () => {
     try {
-      const apiKey = String(message.apiKey || "").trim();
+      const stored = await chrome.storage.local.get(["bossAiAutoFavAiSettingsV2"]);
+      const apiKey = String(stored?.bossAiAutoFavAiSettingsV2?.apiKey || "").trim();
       if (!apiKey) throw new Error("缺少 API Key");
 
       const response = await fetch("https://api.toporeduce.cn/chat/completions", {
@@ -13,7 +14,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           "Authorization": `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: message.model || "deepseek-v4-flash",
+          model: String(message.model || stored?.bossAiAutoFavAiSettingsV2?.model || "deepseek-v4-flash").trim() || "deepseek-v4-flash",
           messages: message.messages || [],
           temperature: 0.2,
           max_tokens: message.maxTokens || 1400,

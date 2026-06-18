@@ -68,6 +68,7 @@
     },
     greeting: {
       enabled: false,
+      minScore: 60,
       dailyLimit: 20,
       template: "你好，我对这个岗位比较感兴趣，方便进一步沟通吗？"
     }
@@ -81,9 +82,12 @@
   const SETTINGS_KEY = "bossAiAutoFavSettingsV4";
   const USER_PREF_KEY = "bossAiAutoFavUserPrefsV1";
   const AI_SETTINGS_KEY = "bossAiAutoFavAiSettingsV1";
+  const AI_STORAGE_KEY = "bossAiAutoFavAiSettingsV2";
   const AI_STRATEGY_KEY = "bossAiAutoFavAiStrategyV1";
   const DEBUG_LOG_KEY = "bossAiAutoFavDebugLogsV1";
-  const SETTINGS_VERSION = 7;
+  const GREETED_HREFS_KEY = "bossAiAutoFavGreetedHrefsV1";
+  const CAMPAIGN_SCHEMA_VERSION = 5;
+  const SETTINGS_VERSION = 8;
   const SCALE_OPTIONS = [
     { code: "301", label: "0-20人" },
     { code: "302", label: "20-99人" },
@@ -94,7 +98,8 @@
   ];
   const state = {
     running: false,
-    processed: new Set(),
+    processedThisRun: new Set(),
+    historicalSeen: new Set(),
     logs: [],
     records: loadRecords(),
     scanned: 0,
@@ -109,6 +114,7 @@
     aiSettings: loadAiSettings(),
     aiStrategy: loadAiStrategy(),
     debugLogs: loadDebugLogs(),
+    greetedHrefs: loadGreetedHrefs(),
     settingsTimer: null,
     autoTimer: null,
     countdownTimer: null,
@@ -138,6 +144,18 @@
 
   function saveDebugLogs() {
     localStorage.setItem(DEBUG_LOG_KEY, JSON.stringify(state.debugLogs.slice(-400)));
+  }
+
+  function loadGreetedHrefs() {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(GREETED_HREFS_KEY) || "[]"));
+    } catch (_) {
+      return new Set();
+    }
+  }
+
+  function saveGreetedHrefs() {
+    localStorage.setItem(GREETED_HREFS_KEY, JSON.stringify([...state.greetedHrefs].slice(-1500)));
   }
 
   function loadCampaign() {
@@ -196,21 +214,104 @@
       const saved = JSON.parse(localStorage.getItem(AI_SETTINGS_KEY) || "null") || {};
       return {
         provider: "deepseek",
-        apiKey: saved.apiKey || "",
+        apiKey: "",
+        hasKey: Boolean(saved.apiKey),
         model: saved.model || "deepseek-v4-flash"
       };
     } catch (_) {
-      return { provider: "deepseek", apiKey: "", model: "deepseek-v4-flash" };
+      return { provider: "deepseek", apiKey: "", hasKey: false, model: "deepseek-v4-flash" };
     }
   }
 
-  function saveAiSettings() {
+  function storageLocalGet(keys) {
+    return new Promise(resolve => {
+      if (typeof chrome === "undefined" || !chrome.storage?.local) {
+        resolve({});
+        return;
+      }
+      chrome.storage.local.get(keys, result => {
+        if (chrome.runtime?.lastError) {
+          resolve({});
+          return;
+        }
+        resolve(result || {});
+      });
+    });
+  }
+
+  function storageLocalSet(values) {
+    return new Promise(resolve => {
+      if (typeof chrome === "undefined" || !chrome.storage?.local) {
+        resolve(false);
+        return;
+      }
+      chrome.storage.local.set(values, () => {
+        resolve(!chrome.runtime?.lastError);
+      });
+    });
+  }
+
+  async function hydrateAiSettingsFromExtensionStorage() {
+    const stored = await storageLocalGet([AI_STORAGE_KEY]);
+    const next = stored?.[AI_STORAGE_KEY] || {};
+    let migrated = false;
+    try {
+      const legacy = JSON.parse(localStorage.getItem(AI_SETTINGS_KEY) || "null") || {};
+      if (legacy.apiKey && !next.apiKey) {
+        next.apiKey = legacy.apiKey;
+        migrated = true;
+      }
+      if (legacy.model && !next.model) next.model = legacy.model;
+    } catch (_) {}
     state.aiSettings = {
       provider: "deepseek",
-      apiKey: String(state.aiSettings.apiKey || "").trim(),
+      apiKey: "",
+      hasKey: Boolean(String(next.apiKey || "").trim()),
+      model: String(next.model || state.aiSettings.model || "deepseek-v4-flash").trim() || "deepseek-v4-flash"
+    };
+    if (migrated) {
+      await storageLocalSet({
+        [AI_STORAGE_KEY]: {
+          provider: "deepseek",
+          apiKey: String(next.apiKey || "").trim(),
+          model: state.aiSettings.model
+        }
+      });
+      localStorage.removeItem(AI_SETTINGS_KEY);
+      debugLog("ai_key_migrated_to_extension_storage");
+    }
+    const keyInput = document.querySelector("#baf-ai-key");
+    if (keyInput) {
+      keyInput.value = "";
+      keyInput.placeholder = state.aiSettings.hasKey ? "已保存，留空不修改" : "sk-...";
+    }
+    setPanelValue("#baf-ai-model", state.aiSettings.model || "deepseek-v4-flash");
+    updatePanel();
+  }
+
+  async function saveAiSettings() {
+    const currentStored = await storageLocalGet([AI_STORAGE_KEY]);
+    const existing = currentStored?.[AI_STORAGE_KEY] || {};
+    const nextApiKey = String(state.aiSettings.apiKey || existing.apiKey || "").trim();
+    state.aiSettings = {
+      provider: "deepseek",
+      apiKey: "",
+      hasKey: Boolean(nextApiKey),
       model: String(state.aiSettings.model || "deepseek-v4-flash").trim() || "deepseek-v4-flash"
     };
-    localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(state.aiSettings));
+    await storageLocalSet({
+      [AI_STORAGE_KEY]: {
+        provider: "deepseek",
+        apiKey: nextApiKey,
+        model: state.aiSettings.model
+      }
+    });
+    localStorage.removeItem(AI_SETTINGS_KEY);
+    const keyInput = document.querySelector("#baf-ai-key");
+    if (keyInput && keyInput.value) {
+      keyInput.value = "";
+      keyInput.placeholder = state.aiSettings.hasKey ? "已保存，留空不修改" : "sk-...";
+    }
   }
 
   function loadAiStrategy() {
@@ -505,6 +606,12 @@
     return "";
   }
 
+  function currentCampaignKeywordLabel() {
+    return state.campaign?.active || state.campaign?.paused
+      ? keywordLabel(keywordFromCampaign())
+      : currentQueryLabel();
+  }
+
   function parseSearchKeywords() {
     const keywords = parseKeywordList(document.querySelector("#baf-keywords")?.value || "");
     const expandedKeywords = document.querySelector("#baf-expand-keywords")?.checked
@@ -718,6 +825,121 @@
       hardExcluded,
       reviewNotes: [...new Set([...targetResult.reviewNotes, ...fitResult.reviewNotes])]
     };
+  }
+
+  class LlmJudgementError extends Error {
+    constructor(message, detail = {}) {
+      super(message);
+      this.name = "LlmJudgementError";
+      this.detail = detail;
+    }
+  }
+
+  function normalizeLlmAction(action, score, hardExcluded) {
+    const raw = norm(action).toLowerCase();
+    if (hardExcluded || /exclude|skip|reject|排除|跳过|不合适/.test(raw)) return "exclude";
+    if (/favorite|collect|收藏|高匹配/.test(raw)) return "favorite";
+    if (/review|复核|待定|人工/.test(raw)) return "review";
+    if (score >= config.threshold) return "favorite";
+    if (score >= REVIEW_THRESHOLD) return "review";
+    return "exclude";
+  }
+
+  function normalizeLlmJudgement(parsed, localResult, filterResult) {
+    const score = safeNumber(parsed?.score, localResult.score, 0, 100);
+    const hits = Array.isArray(parsed?.hits) ? parsed.hits.map(norm).filter(Boolean) : [];
+    const negatives = Array.isArray(parsed?.negatives) ? parsed.negatives.map(norm).filter(Boolean) : [];
+    const reviewNotes = Array.isArray(parsed?.reviewNotes) ? parsed.reviewNotes.map(norm).filter(Boolean) : [];
+    const hardExcluded = Boolean(parsed?.hardExcluded || filterResult.hardExcluded);
+    const action = normalizeLlmAction(parsed?.action || parsed?.recommendation, score, hardExcluded);
+    return {
+      score,
+      action,
+      hits: hits.length ? hits : localResult.hits.slice(0, 8),
+      negatives: [...new Set([...negatives, ...filterResult.negatives])],
+      filterNotes: filterResult.notes,
+      reviewNotes,
+      hardExcluded,
+      mainReason: norm(parsed?.mainReason || parsed?.reason || ""),
+      decisionLog: norm(parsed?.decisionLog || parsed?.analysis || ""),
+      recommendedAction: norm(parsed?.recommendedAction || "")
+    };
+  }
+
+  function jobJudgementPromptPayload(job, detail, localResult, filterResult) {
+    return {
+      job: {
+        title: job.title,
+        href: job.href,
+        cardText: norm(job.cardText || "").slice(0, 1600),
+        detailText: norm(detail || "").slice(0, 5000),
+        searchKeyword: currentCampaignKeywordLabel(),
+        companyScale: currentCompanyScaleLabel()
+      },
+      userConfig: {
+        jobNature: jobNatureDisplayValue(config.filters.jobNature) || "不限",
+        targetDirections: activeTargetKeywords().slice(0, 20),
+        salaryMinK: config.filters.salaryMin || "",
+        salaryMaxK: config.filters.salaryMax || "",
+        favoriteScore: config.threshold,
+        reviewScore: REVIEW_THRESHOLD,
+        customPositive: (config.filters.customPositive || []).slice(0, 30),
+        customNegative: (config.filters.customNegative || []).slice(0, 30)
+      },
+      screeningStrategy: screeningStrategySnapshot(),
+      localReference: {
+        score: localResult.score,
+        hits: localResult.hits.slice(0, 20),
+        negatives: [...localResult.negatives, ...filterResult.negatives].slice(0, 20),
+        reviewNotes: localResult.reviewNotes.slice(0, 10),
+        hardExcluded: Boolean(localResult.hardExcluded || filterResult.hardExcluded),
+        filterNotes: filterResult.notes
+      },
+      outputSchema: {
+        score: "0-100 integer",
+        action: "favorite | review | exclude",
+        hits: ["命中的正向理由"],
+        negatives: ["扣分或排除理由"],
+        reviewNotes: ["需要人工复核的疑点"],
+        hardExcluded: "boolean",
+        mainReason: "一句话主因",
+        decisionLog: "简短说明为什么给这个分和动作",
+        recommendedAction: "已自动收藏 | 人工复核 | 跳过"
+      }
+    };
+  }
+
+  async function judgeJobWithLlm(job, detail, localResult, filterResult) {
+    if (!aiConfigured()) {
+      throw new LlmJudgementError("缺少 API Key，无法进行 LLM 岗位判断");
+    }
+    const payload = jobJudgementPromptPayload(job, detail, localResult, filterResult);
+    const messages = [
+      {
+        role: "system",
+        content: [
+          "你是 BOSS 直聘岗位筛选助手。必须只返回 JSON 对象，不要 Markdown。",
+          "你要根据用户的岗位性质、目标方向、薪资边界、加分词和排除词判断岗位是否值得收藏。",
+          "本地规则结果只是参考；最终 score/action/mainReason 必须由你独立判断。",
+          "如果岗位性质或目标方向不匹配，不能给 favorite；高风险、明显不相关或命中硬排除时 action=exclude。",
+          "action 只能是 favorite、review、exclude。score 必须是 0 到 100 的整数。"
+        ].join("\n")
+      },
+      {
+        role: "user",
+        content: JSON.stringify(payload)
+      }
+    ];
+    try {
+      const content = await callDeepSeek(messages, 1200);
+      const parsed = parseAiJson(content);
+      return normalizeLlmJudgement(parsed, localResult, filterResult);
+    } catch (error) {
+      throw new LlmJudgementError(`LLM 岗位判断失败：${String(error?.message || error)}`, {
+        title: job.title,
+        href: job.href
+      });
+    }
   }
 
   function hasAny(text, words) {
@@ -1075,9 +1297,33 @@
     return r.width > 0 && r.height > 0 && r.bottom > 120 && r.top < window.innerHeight - 20;
   }
 
+  function jobListContainer() {
+    const candidates = Array.from(document.querySelectorAll("div,section,main,ul"))
+      .filter(el => !el.closest("#boss-ai-autofav-panel"))
+      .map(el => {
+        const r = el.getBoundingClientRect();
+        const links = Array.from(el.querySelectorAll('a[href*="/job_detail/"]')).filter(a => visible(a));
+        return { el, r, count: links.length, area: Math.max(1, r.width * r.height) };
+      })
+      .filter(x =>
+        x.count >= 2 &&
+        x.r.left < window.innerWidth * 0.55 &&
+        x.r.width > 220 &&
+        x.r.height > 160 &&
+        x.r.bottom > 180
+      )
+      .sort((a, b) =>
+        b.count - a.count ||
+        a.r.left - b.r.left ||
+        a.area - b.area
+      );
+    return candidates[0]?.el || document;
+  }
+
   function getJobLinks() {
     const seen = new Set();
-    return Array.from(document.querySelectorAll('a[href*="/job_detail/"]'))
+    const root = jobListContainer();
+    return Array.from(root.querySelectorAll('a[href*="/job_detail/"]'))
       .filter(a => visible(a))
       .map(a => {
         const href = a.href;
@@ -1094,6 +1340,11 @@
         return { href, title, card, cardText: norm(card.textContent) };
       })
       .filter(Boolean);
+  }
+
+  function jobListSignature(limit = 8) {
+    const links = getJobLinks().slice(0, limit);
+    return links.map(job => `${job.href}|${job.title}`).join("||");
   }
 
   function extractRelevantDetail(text) {
@@ -1120,26 +1371,239 @@
   }
 
   function rightPanelText() {
+    return detailSnapshot().detailText;
+  }
+
+  function canonicalJobHref(href) {
+    try {
+      const url = new URL(href, location.href);
+      return `${url.origin}${url.pathname}`;
+    } catch (_) {
+      return String(href || "").split(/[?#]/)[0];
+    }
+  }
+
+  function rightPanelCandidate() {
     const vw = window.innerWidth;
+    const minLeft = Math.max(300, vw * 0.22);
     const candidates = Array.from(document.querySelectorAll("div,section,main,article"))
+      .filter(el => !el.closest("#boss-ai-autofav-panel"))
       .map(el => {
         const r = el.getBoundingClientRect();
-        return { el, r, text: extractRelevantDetail(el.textContent) };
+        const fullText = norm(el.innerText || el.textContent);
+        const detailText = extractRelevantDetail(fullText);
+        const hrefs = Array.from(el.querySelectorAll('a[href*="/job_detail/"]'))
+          .map(a => canonicalJobHref(a.href))
+          .filter(Boolean);
+        const hasDetailMarker = /职位描述|职位详情|岗位职责|岗位要求|职位要求/.test(fullText);
+        const hasActionMarker = /立即沟通|收藏|BOSS直聘|工作地址/.test(fullText);
+        return { el, r, fullText, detailText, hrefs, hasDetailMarker, hasActionMarker };
       })
       .filter(x =>
-        x.r.left > vw * 0.33 &&
-        x.r.top > 170 &&
+        x.r.left > minLeft &&
+        x.r.top > 120 &&
         x.r.width > 280 &&
         x.r.height > 180 &&
-        x.text.length > 80
+        x.fullText.length > 80
       )
       .sort((a, b) => {
-        const aHasDetail = /职位描述|职位详情|岗位职责|岗位要求|职位要求/.test(a.text) ? 1 : 0;
-        const bHasDetail = /职位描述|职位详情|岗位职责|岗位要求|职位要求/.test(b.text) ? 1 : 0;
-        if (aHasDetail !== bHasDetail) return bHasDetail - aHasDetail;
-        return b.text.length - a.text.length;
+        const aScore = (a.hasDetailMarker ? 1000 : 0) + (a.hasActionMarker ? 120 : 0) + Math.min(a.fullText.length, 5000) / 20;
+        const bScore = (b.hasDetailMarker ? 1000 : 0) + (b.hasActionMarker ? 120 : 0) + Math.min(b.fullText.length, 5000) / 20;
+        if (aScore !== bScore) return bScore - aScore;
+        return Math.abs(a.r.left - vw * 0.36) - Math.abs(b.r.left - vw * 0.36);
       });
-    return candidates[0]?.text || "";
+    return candidates[0] || null;
+  }
+
+  function primaryTitleText(text) {
+    return norm(text)
+      .replace(/\s+\d+(?:\.\d+)?\s*[-~－—到]\s*\d+(?:\.\d+)?\s*(?:K|k|千|万|元).*$/, "")
+      .replace(/\s+\d+(?:\.\d+)?\s*(?:K|k|千|万|元).*$/, "")
+      .replace(/^猎头\s*/, "")
+      .trim();
+  }
+
+  function extractJobCodes(text) {
+    const matches = String(text || "").match(/J\d{3,}/gi) || [];
+    return [...new Set(matches.map(item => item.toUpperCase()))];
+  }
+
+  function normalizeJobTitle(text) {
+    return primaryTitleText(text)
+      .replace(/\([^)]*\)/g, "")
+      .replace(/（[^）]*）/g, "")
+      .replace(/\b[A-Z]{0,3}\s*J\d{3,}\b/gi, "")
+      .replace(/\b[MSLP]\b/gi, "")
+      .replace(/^(高级|资深|初级|中级|专家|高级资深|主任|高级主任)/, "")
+      .replace(/[^\u4e00-\u9fa5a-z0-9]+/gi, "")
+      .replace(/\s+/g, "")
+      .toLowerCase();
+  }
+
+  function titleVariants(text) {
+    const base = normalizeJobTitle(text);
+    if (!base) return [];
+    const variants = new Set([base]);
+    [
+      /^(高级|资深|初级|中级|专家|高级资深|主任|高级主任)/,
+      /(工程师|专员|经理|主管|负责人|专家|实习)$/
+    ].forEach(pattern => {
+      const next = base.replace(pattern, "");
+      if (next.length >= 3) variants.add(next);
+    });
+    return [...variants];
+  }
+
+  function titleMatchCandidates(job) {
+    const raw = [
+      job?.title || "",
+      primaryTitleText(job?.cardText || "")
+    ];
+    const candidates = new Set();
+    raw.forEach(value => {
+      titleVariants(value).forEach(key => {
+        if (key.length >= 3) candidates.add(key);
+      });
+      const key = normalizeJobTitle(value);
+      const withoutLevel = key.replace(/[a-z]$/, "");
+      if (withoutLevel.length >= 3) candidates.add(withoutLevel);
+    });
+    return [...candidates].sort((a, b) => b.length - a.length);
+  }
+
+  function detailMatchesJob(detailText, job) {
+    const detail = normalizeJobTitle(detailText);
+    const rawDetail = norm(detailText);
+    const jobCodes = extractJobCodes(`${job?.title || ""} ${job?.cardText || ""}`);
+    const detailCodes = new Set(extractJobCodes(rawDetail));
+    const codeMatched = jobCodes.find(code => detailCodes.has(code));
+    if (codeMatched) return { matched: true, strong: true, reason: `code:${codeMatched}` };
+    if (jobCodes.length && detailCodes.size) {
+      return { matched: false, strong: true, reason: `code_mismatch:${jobCodes.join("/")}` };
+    }
+    if (!detail) return { matched: false, strong: false, reason: "empty_detail" };
+
+    const title = titleMatchCandidates(job).find(candidate => detail.includes(candidate));
+    if (title) return { matched: true, strong: title.length >= 6, reason: `title:${title}` };
+
+    const prefix = titleMatchCandidates(job)
+      .filter(candidate => candidate.length >= 8)
+      .find(candidate => detail.includes(candidate.slice(0, 8)));
+    if (prefix) return { matched: true, strong: false, reason: `prefix:${prefix.slice(0, 8)}` };
+
+    return { matched: false, strong: false, reason: "title_mismatch" };
+  }
+
+  function detailSnapshot() {
+    const candidate = rightPanelCandidate();
+    const fullText = candidate?.fullText || "";
+    const detailText = candidate?.detailText || extractRelevantDetail(fullText);
+    return {
+      text: detailText || fullText,
+      fullText,
+      detailText,
+      hrefs: candidate?.hrefs || [],
+      signature: norm(fullText || detailText).slice(0, 500)
+    };
+  }
+
+  function jobCardLooksSelected(job) {
+    const nodes = [job?.card, job?.card?.parentElement, job?.card?.parentElement?.parentElement].filter(Boolean);
+    return nodes.some(node => {
+      const tokens = String(node.className || "")
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean);
+      return node.getAttribute?.("aria-selected") === "true" ||
+        tokens.some(token =>
+          token === "active" ||
+          token === "selected" ||
+          token === "current" ||
+          token === "cur" ||
+          token === "checked" ||
+          token.endsWith("-active") ||
+          token.includes("selected")
+        );
+    });
+  }
+
+  async function waitForJobDetail(job, beforeSignature, timeoutMs = 5000) {
+    const started = Date.now();
+    const targetHref = canonicalJobHref(job?.href);
+    while (Date.now() - started < timeoutMs) {
+      const snapshot = detailSnapshot();
+      const changed = Boolean(snapshot.signature && snapshot.signature !== beforeSignature);
+      const match = detailMatchesJob(snapshot.fullText || snapshot.text, job);
+      const hrefMatched = Boolean(targetHref && snapshot.hrefs.includes(targetHref));
+      const selected = jobCardLooksSelected(job);
+      const confirmed = hrefMatched || (match.matched && (changed || match.strong || selected));
+      if (snapshot.text.length > 80 && confirmed) {
+        return {
+          ok: true,
+          text: snapshot.text,
+          fullText: snapshot.fullText,
+          changed,
+          matched: match.matched,
+          matchReason: hrefMatched ? "href" : match.reason,
+          hrefMatched,
+          selected,
+          signature: snapshot.signature
+        };
+      }
+      await sleep(250);
+    }
+    const snapshot = detailSnapshot();
+    const match = detailMatchesJob(snapshot.fullText || snapshot.text, job);
+    return {
+      ok: false,
+      text: snapshot.text,
+      fullText: snapshot.fullText,
+      signature: snapshot.signature,
+      matched: match.matched,
+      matchReason: match.reason,
+      hrefMatched: Boolean(targetHref && snapshot.hrefs.includes(targetHref)),
+      selected: jobCardLooksSelected(job)
+    };
+  }
+
+  class JobDetailNotConfirmedError extends Error {
+    constructor(message, detail = {}) {
+      super(message);
+      this.name = "JobDetailNotConfirmedError";
+      this.detail = detail;
+    }
+  }
+
+  function clickJobCard(job) {
+    const detailAnchor = job?.card?.tagName === "A"
+      ? job.card
+      : job?.card?.querySelector?.('a[href*="/job_detail/"]');
+    const clickTarget = detailAnchor || job?.card;
+    if (!clickTarget) return { method: "none", href: "" };
+    const preventNavigation = event => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    detailAnchor?.addEventListener("click", preventNavigation, { capture: true, once: true });
+    const r = clickTarget.getBoundingClientRect();
+    const eventInit = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: Math.round(r.left + Math.min(24, Math.max(4, r.width / 2))),
+      clientY: Math.round(r.top + Math.min(18, Math.max(4, r.height / 2))),
+      button: 0,
+      buttons: 1
+    };
+    ["pointerdown", "mousedown", "pointerup", "mouseup"].forEach(type => {
+      clickTarget.dispatchEvent(new MouseEvent(type, eventInit));
+    });
+    if (typeof clickTarget.click === "function") {
+      clickTarget.click();
+      return { method: "element_click", href: detailAnchor?.href || "" };
+    }
+    clickTarget.dispatchEvent(new MouseEvent("click", eventInit));
+    return { method: "mouse_event", href: detailAnchor?.href || "" };
   }
 
   function favoriteButtonCandidates() {
@@ -1211,8 +1675,22 @@
     return config.greeting?.enabled && limit > 0 && Number(state.daily.greeted || 0) >= limit;
   }
 
-  function greetingButtonCandidates() {
-    return Array.from(document.querySelectorAll("a,button,[role='button']"))
+  function rightSideInteractiveRoot() {
+    const vw = window.innerWidth;
+    return Array.from(document.querySelectorAll("div,section,main,article"))
+      .map(el => ({ el, r: el.getBoundingClientRect(), text: norm(el.textContent) }))
+      .filter(x =>
+        x.r.left > vw * 0.35 &&
+        x.r.width > 260 &&
+        x.r.height > 160 &&
+        x.text.length > 40 &&
+        !x.el.closest("#boss-ai-autofav-panel")
+      )
+      .sort((a, b) => a.r.left - b.r.left || b.r.height - a.r.height)[0]?.el || document;
+  }
+
+  function greetingButtonCandidates(root = rightSideInteractiveRoot()) {
+    return Array.from(root.querySelectorAll("a,button,[role='button']"))
       .map(el => {
         const r = el.getBoundingClientRect();
         const text = norm(el.textContent || el.getAttribute("aria-label") || el.getAttribute("title"));
@@ -1228,8 +1706,8 @@
       .sort((a, b) => a.r.top - b.r.top);
   }
 
-  function messageInputCandidates() {
-    return Array.from(document.querySelectorAll("textarea,input,[contenteditable='true']"))
+  function messageInputCandidates(root = document) {
+    return Array.from(root.querySelectorAll("textarea,input,[contenteditable='true']"))
       .map(el => {
         const r = el.getBoundingClientRect();
         const hint = norm(el.getAttribute("placeholder") || el.getAttribute("aria-label") || el.getAttribute("title") || "");
@@ -1238,28 +1716,43 @@
       .filter(x =>
         x.r.width > 80 &&
         x.r.height > 18 &&
-        x.r.top > 80 &&
+        x.r.top > 120 &&
         x.r.top < window.innerHeight - 20 &&
+        x.r.left > window.innerWidth * 0.35 &&
+        !/搜索|职位|岗位|公司|query|keyword|search/.test(x.hint) &&
         (/消息|沟通|招呼|输入|发送/.test(x.hint) || x.el.tagName === "TEXTAREA" || x.el.getAttribute("contenteditable") === "true")
       )
       .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);
   }
 
-  function sendButtonCandidates() {
-    return Array.from(document.querySelectorAll("button,[role='button']"))
+  function sendButtonCandidates(root = document) {
+    return Array.from(root.querySelectorAll("button,[role='button']"))
       .map(el => {
         const r = el.getBoundingClientRect();
         const text = norm(el.textContent || el.getAttribute("aria-label") || el.getAttribute("title"));
-        return { el, r, text };
+        return { el, r, text, disabled: Boolean(el.disabled || el.getAttribute("aria-disabled") === "true") };
       })
       .filter(x =>
         x.r.width > 0 &&
         x.r.height > 0 &&
         x.r.top > 80 &&
         x.r.top < window.innerHeight - 20 &&
-        /发送/.test(x.text)
+        /发送/.test(x.text) &&
+        !x.disabled
       )
       .sort((a, b) => a.r.top - b.r.top);
+  }
+
+  function closestConversationRoot(el) {
+    let current = el;
+    for (let i = 0; i < 6 && current?.parentElement; i += 1) {
+      current = current.parentElement;
+      const hasInput = current.querySelector?.("textarea,input,[contenteditable='true']");
+      const hasSend = Array.from(current.querySelectorAll?.("button,[role='button']") || [])
+        .some(button => /发送/.test(norm(button.textContent || button.getAttribute("aria-label") || button.getAttribute("title"))));
+      if (hasInput && hasSend) return current;
+    }
+    return document;
   }
 
   function fillMessageInput(input, text) {
@@ -1270,43 +1763,79 @@
     } else {
       el.value = text;
     }
-    el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+    try {
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+    } catch (_) {
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }
     el.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
-  async function tryAutoGreeting() {
+  function messageInputValue(input) {
+    const el = input.el || input;
+    return norm(el.getAttribute("contenteditable") === "true" ? el.textContent : el.value);
+  }
+
+  async function waitForGreetingSendConfirmation(input, template, timeoutMs = 3500) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const value = messageInputValue(input);
+      if (!value || value !== norm(template)) return true;
+      await sleep(250);
+    }
+    return false;
+  }
+
+  async function tryAutoGreeting(job, record) {
     if (!config.greeting?.enabled) return "自动打招呼未开启";
     if (greetingLimitReached()) return `达到今日打招呼上限 ${config.greeting.dailyLimit}`;
+    const minScore = safeNumber(config.greeting.minScore, config.threshold, REVIEW_THRESHOLD + 1, 100);
+    if (safeNumber(record?.score, 0) < minScore) return `未达到打招呼最低分 ${minScore}`;
+    if (job?.href && state.greetedHrefs.has(job.href)) return "该岗位已打过招呼，跳过";
     const template = norm(config.greeting.template || "");
     if (!template) return "未填写打招呼模板";
 
-    const greetButton = greetingButtonCandidates()[0];
+    const detailRoot = rightSideInteractiveRoot();
+    const greetButton = greetingButtonCandidates(detailRoot)[0];
     if (greetButton) {
       greetButton.el.scrollIntoView({ block: "center", inline: "nearest" });
       greetButton.el.click();
       await sleep(800);
     }
 
-    const input = messageInputCandidates()[0];
+    const input = messageInputCandidates(document)[0];
     if (!input) {
       return greetButton ? "已点击沟通按钮，但未找到消息输入框" : "未找到打招呼或消息输入入口";
     }
 
     fillMessageInput(input, template);
     await sleep(350);
-    const sendButton = sendButtonCandidates()[0];
+    if (messageInputValue(input) !== template) {
+      return "招呼内容写入后校验失败，未发送";
+    }
+    const conversationRoot = closestConversationRoot(input.el);
+    const sendButton = sendButtonCandidates(conversationRoot)[0];
     if (!sendButton) {
-      return "已写入招呼模板，未找到发送按钮，未强行发送";
+      return "已写入招呼模板，未找到同一聊天窗口的发送按钮，未发送";
     }
 
     sendButton.el.click();
-    state.daily.greeted = Number(state.daily.greeted || 0) + 1;
+    const confirmed = await waitForGreetingSendConfirmation(input, template);
+    if (!confirmed) {
+      return "已点击发送，但未确认发送成功，未计入今日招呼";
+    }
+    if (job?.href) {
+      state.greetedHrefs.add(job.href);
+      saveGreetedHrefs();
+    }
+    state.daily.greeted = safeNumber(state.daily.greeted, 0, 0) + 1;
     saveDailyStats();
     return "已发送自动打招呼";
   }
 
   function findJobScroller() {
-    const els = Array.from(document.querySelectorAll("div,ul,section"));
+    const root = jobListContainer();
+    const els = [root, ...Array.from(root.querySelectorAll("div,ul,section"))];
     return els
       .map(el => ({
         el,
@@ -1314,7 +1843,7 @@
         scrollable: el.scrollHeight > el.clientHeight + 80,
         r: el.getBoundingClientRect()
       }))
-      .filter(x => x.count >= 4 && x.scrollable && x.r.left < window.innerWidth * 0.45)
+      .filter(x => x.count >= 2 && x.scrollable && x.r.left < window.innerWidth * 0.55)
       .sort((a, b) => b.count - a.count)[0]?.el || document.scrollingElement;
   }
 
@@ -1330,7 +1859,9 @@
   }
 
   function log(record) {
-    persistRecord(record);
+    if (!record.transient) {
+      persistRecord(record);
+    }
     state.logs.unshift(record);
     state.logs = state.logs.slice(0, 120);
     try {
@@ -1406,7 +1937,7 @@
     const mainReason = record.mainReason || mainReasonFor(record);
     const saved = {
       time: record.time,
-      query: currentQueryLabel(),
+      query: currentCampaignKeywordLabel(),
       result: actionLabel(record.action),
       processingStatus,
       recommendedAction,
@@ -1422,6 +1953,9 @@
       filterNotes: (record.filterNotes || []).join("、"),
       reviewNotes: (record.reviewNotes || []).join("、"),
       decisionLog: record.decisionLog || "",
+      detailMatched: record.detailMatched || "",
+      detailChanged: record.detailChanged || "",
+      detailHrefMatched: record.detailHrefMatched || "",
       favoriteResult: record.favoriteResult || "",
       favoriteButtonText: record.favoriteButtonText || "",
       greetingResult: record.greetingResult || "",
@@ -1437,33 +1971,41 @@
     saveRecords();
   }
 
+  const TABLE_HEADERS = ["时间", "搜索词", "结果", "处理状态", "推荐动作", "是否需要人工看", "主要原因", "规则版本", "分数", "岗位", "公司规模", "岗位卡片", "命中关键词", "扣分关键词", "筛选备注", "复核建议", "决策日志", "详情匹配", "详情已切换", "详情链接匹配", "收藏状态", "收藏按钮文本", "打招呼状态", "链接"];
+
+  function tableRow(record) {
+    return [
+      record.time,
+      record.query,
+      record.result,
+      record.processingStatus || record.result,
+      record.recommendedAction || "",
+      record.needsReview || "",
+      record.mainReason || "",
+      record.ruleVersion || "",
+      record.score,
+      record.title,
+      record.companyScale || "",
+      record.cardText,
+      record.hits,
+      record.negatives,
+      record.filterNotes,
+      record.reviewNotes,
+      record.decisionLog,
+      record.detailMatched,
+      record.detailChanged,
+      record.detailHrefMatched,
+      record.favoriteResult,
+      record.favoriteButtonText,
+      record.greetingResult || "",
+      record.href
+    ];
+  }
+
   function tableText() {
-    const headers = ["时间", "搜索词", "结果", "处理状态", "推荐动作", "是否需要人工看", "主要原因", "规则版本", "分数", "岗位", "公司规模", "岗位卡片", "命中关键词", "扣分关键词", "筛选备注", "复核建议", "决策日志", "收藏状态", "收藏按钮文本", "打招呼状态", "链接"];
     const clean = value => String(value ?? "").replace(/\t/g, " ").replace(/\r?\n/g, " ").trim();
-    const rows = state.records.map(r => [
-      r.time,
-      r.query,
-      r.result,
-      r.processingStatus || r.result,
-      r.recommendedAction || "",
-      r.needsReview || "",
-      r.mainReason || "",
-      r.ruleVersion || "",
-      r.score,
-      r.title,
-      r.companyScale,
-      r.cardText,
-      r.hits,
-      r.negatives,
-      r.filterNotes,
-      r.reviewNotes,
-      r.decisionLog,
-      r.favoriteResult,
-      r.favoriteButtonText,
-      r.greetingResult || "",
-      r.href
-    ].map(clean).join("\t"));
-    return [headers.join("\t"), ...rows].join("\n");
+    const rows = state.records.map(record => tableRow(record).map(clean).join("\t"));
+    return [TABLE_HEADERS.join("\t"), ...rows].join("\n");
   }
 
   function recordsJson() {
@@ -1611,38 +2153,21 @@
   }
 
   function tableTextFor(records) {
-    const headers = ["时间", "搜索词", "结果", "处理状态", "推荐动作", "是否需要人工看", "主要原因", "规则版本", "分数", "岗位", "公司规模", "岗位卡片", "命中关键词", "扣分关键词", "筛选备注", "复核建议", "决策日志", "收藏状态", "收藏按钮文本", "打招呼状态", "链接"];
     const clean = value => String(value ?? "").replace(/\t/g, " ").replace(/\r?\n/g, " ").trim();
-    const rows = records.map(r => [
-      r.time,
-      r.query,
-      r.result,
-      r.processingStatus || r.result,
-      r.recommendedAction || "",
-      r.needsReview || "",
-      r.mainReason || "",
-      r.ruleVersion,
-      r.score,
-      r.title,
-      r.companyScale || "",
-      r.cardText,
-      r.hits,
-      r.negatives,
-      r.filterNotes,
-      r.reviewNotes,
-      r.decisionLog,
-      r.favoriteResult,
-      r.favoriteButtonText,
-      r.greetingResult || "",
-      r.href
-    ].map(clean).join("\t"));
-    return [headers.join("\t"), ...rows].join("\n");
+    const rows = records.map(record => tableRow(record).map(clean).join("\t"));
+    return [TABLE_HEADERS.join("\t"), ...rows].join("\n");
+  }
+
+  function safeNumber(value, fallback = 0, min = -Infinity, max = Infinity) {
+    const number = Number(value);
+    const next = Number.isFinite(number) ? number : fallback;
+    return Math.min(max, Math.max(min, next));
   }
 
   function readPanelConfig() {
-    config.threshold = Math.max(REVIEW_THRESHOLD + 1, Number(document.querySelector("#baf-threshold")?.value || config.threshold));
+    config.threshold = safeNumber(document.querySelector("#baf-threshold")?.value, config.threshold, REVIEW_THRESHOLD + 1);
     setPanelValue("#baf-threshold", config.threshold);
-    config.maxJobs = Number(document.querySelector("#baf-max")?.value || config.maxJobs);
+    config.maxJobs = safeNumber(document.querySelector("#baf-max")?.value, config.maxJobs, 1);
     config.filters.jobNature = norm(document.querySelector("#baf-job-nature")?.value || "");
     config.filters.targetKeywords = parseKeywordList(document.querySelector("#baf-target-keywords")?.value || "");
     config.filters.salaryMin = norm(document.querySelector("#baf-salary-min")?.value || "");
@@ -1650,18 +2175,19 @@
     config.filters.customPositive = parseKeywordList(document.querySelector("#baf-positive")?.value || "");
     config.filters.customNegative = parseKeywordList(document.querySelector("#baf-negative")?.value || "");
     config.filters.skipRecorded = Boolean(document.querySelector("#baf-skip-recorded")?.checked);
-    config.safety.dailyScanLimit = Math.max(0, Number(document.querySelector("#baf-daily-scan-limit")?.value || config.safety.dailyScanLimit));
-    config.safety.dailyFavoriteLimit = Math.max(0, Number(document.querySelector("#baf-daily-favorite-limit")?.value || config.safety.dailyFavoriteLimit));
-    config.safety.pauseEvery = Math.max(0, Number(document.querySelector("#baf-pause-every")?.value || config.safety.pauseEvery));
-    config.safety.pauseMinSec = Math.max(0, Number(document.querySelector("#baf-pause-min")?.value || config.safety.pauseMinSec));
-    config.safety.pauseMaxSec = Math.max(0, Number(document.querySelector("#baf-pause-max")?.value || config.safety.pauseMaxSec));
+    config.safety.dailyScanLimit = safeNumber(document.querySelector("#baf-daily-scan-limit")?.value, config.safety.dailyScanLimit, 0);
+    config.safety.dailyFavoriteLimit = safeNumber(document.querySelector("#baf-daily-favorite-limit")?.value, config.safety.dailyFavoriteLimit, 0);
+    config.safety.pauseEvery = safeNumber(document.querySelector("#baf-pause-every")?.value, config.safety.pauseEvery, 0);
+    config.safety.pauseMinSec = safeNumber(document.querySelector("#baf-pause-min")?.value, config.safety.pauseMinSec, 0);
+    config.safety.pauseMaxSec = safeNumber(document.querySelector("#baf-pause-max")?.value, config.safety.pauseMaxSec, 0);
     config.localAi.queryInfo = Boolean(document.querySelector("#baf-local-ai-info")?.checked);
     config.greeting.enabled = Boolean(document.querySelector("#baf-auto-greet")?.checked);
-    config.greeting.dailyLimit = Math.max(0, Number(document.querySelector("#baf-greet-limit")?.value || config.greeting.dailyLimit));
+    config.greeting.dailyLimit = safeNumber(document.querySelector("#baf-greet-limit")?.value, config.greeting.dailyLimit, 0);
+    config.greeting.minScore = safeNumber(document.querySelector("#baf-greet-min-score")?.value, config.greeting.minScore || config.threshold, REVIEW_THRESHOLD + 1, 100);
     config.greeting.template = String(document.querySelector("#baf-greet-template")?.value || config.greeting.template || "").trim();
-    state.aiSettings.apiKey = String(document.querySelector("#baf-ai-key")?.value || state.aiSettings.apiKey || "").trim();
+    const keyInputValue = String(document.querySelector("#baf-ai-key")?.value || "").trim();
+    if (keyInputValue) state.aiSettings.apiKey = keyInputValue;
     state.aiSettings.model = String(document.querySelector("#baf-ai-model")?.value || state.aiSettings.model || "deepseek-v4-flash").trim();
-    saveAiSettings();
     state.settings = panelSettingsSnapshot();
     saveSettings(state.settings);
     updateConfigSummary();
@@ -1703,6 +2229,7 @@
       },
       greeting: {
         enabled: Boolean(config.greeting.enabled),
+        minScore: safeNumber(config.greeting.minScore, config.threshold, REVIEW_THRESHOLD + 1, 100),
         dailyLimit: Number(config.greeting.dailyLimit || 0),
         template: config.greeting.template || ""
       },
@@ -1710,7 +2237,7 @@
         keywords: document.querySelector("#baf-keywords")?.value || "",
         includeRecommendation: Boolean(document.querySelector("#baf-include-blank")?.checked),
         expandKeywords: Boolean(document.querySelector("#baf-expand-keywords")?.checked),
-        perKeywordMax: Math.max(1, Number(document.querySelector("#baf-per-keyword")?.value || DEFAULT_PER_KEYWORD_MAX))
+        perKeywordMax: safeNumber(document.querySelector("#baf-per-keyword")?.value, DEFAULT_PER_KEYWORD_MAX, 1)
       }
     };
   }
@@ -1879,7 +2406,7 @@
       },
       ai: {
         provider: "deepseek",
-        enabled: Boolean(state.aiSettings.apiKey),
+        enabled: Boolean(state.aiSettings.hasKey),
         model: state.aiSettings.model || "deepseek-v4-flash"
       },
       safety: {
@@ -1975,9 +2502,9 @@
     setPanelValue("#baf-pause-max", config.safety.pauseMaxSec);
     setPanelChecked("#baf-local-ai-info", config.localAi.queryInfo);
     setPanelChecked("#baf-auto-greet", config.greeting.enabled);
+    setPanelValue("#baf-greet-min-score", config.greeting.minScore || config.threshold);
     setPanelValue("#baf-greet-limit", config.greeting.dailyLimit);
     setPanelValue("#baf-greet-template", config.greeting.template);
-    setPanelValue("#baf-ai-key", state.aiSettings.apiKey);
     setPanelValue("#baf-ai-model", state.aiSettings.model || "deepseek-v4-flash");
     setPanelValue("#baf-keywords", settings.search?.keywords || currentSearchKeyword());
     setPanelChecked("#baf-include-blank", settings.search?.includeRecommendation ?? true);
@@ -1987,6 +2514,10 @@
 
   function safetyStopReason() {
     saveDailyStats();
+    const pageText = pageTextWithoutAssistantPanel();
+    if (/验证码|安全验证|登录异常|账号异常|访问过于频繁|请完成验证|滑块/.test(pageText)) {
+      return "检测到验证码、登录异常或风控提示，已停止任务，请人工处理。";
+    }
     const scanLimit = Number(config.safety.dailyScanLimit || 0);
     const favoriteLimit = Number(config.safety.dailyFavoriteLimit || 0);
     if (scanLimit > 0 && state.daily.scanned >= scanLimit) {
@@ -2000,6 +2531,14 @@
       return `达到今日打招呼安全上限 ${greetLimit}`;
     }
     return "";
+  }
+
+  function pageTextWithoutAssistantPanel() {
+    const clone = document.body?.cloneNode(true);
+    if (!clone) return "";
+    clone.querySelector("#boss-ai-autofav-panel")?.remove();
+    clone.querySelector("#baf-feedback")?.remove();
+    return norm(clone.innerText || clone.textContent || "");
   }
 
   function favoriteLimitReached() {
@@ -2105,6 +2644,14 @@
     state.debugLogs.push(entry);
     state.debugLogs = state.debugLogs.slice(-400);
     saveDebugLogs();
+    updateRuntimeLogPreview(entry);
+  }
+
+  function updateRuntimeLogPreview(entry = state.debugLogs[state.debugLogs.length - 1]) {
+    const el = document.querySelector("#baf-last-runtime-log");
+    if (!el || !entry) return;
+    const keyword = entry.keyword ? `｜${entry.keyword}` : "";
+    el.textContent = `运行日志：${entry.event}${keyword}｜${new Date(entry.time).toLocaleTimeString()}`;
   }
 
   function diagnosticsJson() {
@@ -2148,6 +2695,18 @@
     }, null, 2);
   }
 
+  function runtimeLogText(limit = 120) {
+    const logs = state.debugLogs.slice(-limit);
+    if (!logs.length) return "暂无运行日志。";
+    return logs.map(item => {
+      const campaign = item.campaign
+        ? `kw=${item.keyword} idx=${Number(item.campaign.index || 0) + 1}/${item.campaign.total || 0} scanned=${item.campaign.keywordScanned || 0}/${item.campaign.perKeywordMax || 0}`
+        : `kw=${item.keyword}`;
+      const data = item.data && Object.keys(item.data).length ? ` data=${JSON.stringify(item.data)}` : "";
+      return `[${item.time}] ${item.event} running=${item.running} mode=${item.mode} ${campaign}${data}`;
+    }).join("\n");
+  }
+
   async function waitWithCountdown(seconds, label) {
     const total = Math.max(0, Number(seconds || 0));
     for (let left = total; left > 0; left -= 1) {
@@ -2158,16 +2717,24 @@
   }
 
   function readCampaignConfig() {
+    const keywords = parseSearchKeywords();
     return {
+      schemaVersion: CAMPAIGN_SCHEMA_VERSION,
+      runId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       active: true,
       paused: false,
-      keywords: parseSearchKeywords(),
+      phase: "prepare_keyword",
+      currentKeyword: keywords[0] || "",
+      keywordSearchStatus: "pending",
+      keywordListSignature: "",
+      keywordError: "",
+      keywords,
       index: 0,
-      perKeywordMax: Math.max(1, Number(document.querySelector("#baf-per-keyword")?.value || DEFAULT_PER_KEYWORD_MAX)),
+      perKeywordMax: safeNumber(document.querySelector("#baf-per-keyword")?.value, DEFAULT_PER_KEYWORD_MAX, 1),
       keywordScanned: 0,
       totalScanned: 0,
-      restMinSec: Number(config.safety.pauseMinSec || 0),
-      restMaxSec: Number(config.safety.pauseMaxSec || config.safety.pauseMinSec || 0),
+      restMinSec: safeNumber(config.safety.pauseMinSec, 0, 0),
+      restMaxSec: safeNumber(config.safety.pauseMaxSec, config.safety.pauseMinSec || 0, 0),
       settings: panelSettingsSnapshot(),
       startedAt: Date.now()
     };
@@ -2185,6 +2752,7 @@
     state.skipped = 0;
     state.errors = 0;
     state.logs = [];
+    state.processedThisRun = new Set();
   }
 
   function resumeOrCreateCampaign(options = {}) {
@@ -2194,6 +2762,10 @@
         ...state.campaign,
         active: true,
         paused: false,
+        phase: "prepare_keyword",
+        currentKeyword: state.campaign.keywords?.[state.campaign.index] || "",
+        keywordSearchStatus: "resuming",
+        keywordError: "",
         perKeywordMax: next.perKeywordMax,
         restMinSec: next.restMinSec,
         restMaxSec: next.restMaxSec,
@@ -2228,6 +2800,16 @@
     }
     location.href = url.toString();
     return true;
+  }
+
+  function getPageQueryState() {
+    const input = pageSearchInputs()[0];
+    return {
+      urlKeyword: currentSearchKeyword(),
+      inputKeyword: norm(input?.el?.value || ""),
+      listSignature: jobListSignature(),
+      visibleJobCount: getJobLinks().length
+    };
   }
 
   function pageSearchInputs() {
@@ -2298,21 +2880,98 @@
     return true;
   }
 
-  async function switchToKeyword(keyword, reason = "keyword_switch") {
+  async function performKeywordSearch(keyword, beforeSignature = jobListSignature()) {
+    if (sameQueryKeyword(keyword, currentSearchKeyword()) && beforeSignature) {
+      return { method: "same", beforeSignature };
+    }
+    const searchedOnPage = await searchKeywordOnPage(keyword);
+    if (searchedOnPage) return { method: "page_search", beforeSignature };
+    const navigated = navigateToKeyword(keyword);
+    return { method: navigated ? "navigation" : "same", beforeSignature };
+  }
+
+  function keywordResultMatches(keyword) {
+    const next = norm(keyword || "");
+    const stateNow = getPageQueryState();
+    if (!next) {
+      return !stateNow.urlKeyword;
+    }
+    return sameQueryKeyword(next, stateNow.urlKeyword) || sameQueryKeyword(next, stateNow.inputKeyword);
+  }
+
+  async function waitForKeywordResults(keyword, beforeSignature, beforeKeywordMatched = false, timeoutMs = 12000) {
+    const next = norm(keyword || "");
+    const started = Date.now();
+    let lastSignature = "";
+    let stableRounds = 0;
+    while (Date.now() - started < timeoutMs) {
+      if (!state.campaign?.active || state.campaign?.paused) {
+        return { ok: false, reason: "campaign_stopped" };
+      }
+      const pageState = getPageQueryState();
+      const signatureChanged = Boolean(pageState.listSignature && pageState.listSignature !== beforeSignature);
+      const keywordMatches = next ? keywordResultMatches(next) : !pageState.urlKeyword;
+      if (pageState.listSignature && pageState.listSignature === lastSignature) stableRounds += 1;
+      else stableRounds = 0;
+      lastSignature = pageState.listSignature;
+      if (keywordMatches && pageState.visibleJobCount > 0 && (signatureChanged || !beforeSignature || (beforeKeywordMatched && stableRounds >= 2))) {
+        return { ok: true, pageState, signatureChanged, stableRounds };
+      }
+      await sleep(350);
+    }
+    return { ok: false, reason: "timeout", pageState: getPageQueryState() };
+  }
+
+  async function ensureKeywordReady(keyword, reason = "keyword_switch") {
     const next = norm(keyword || "");
     const label = keywordLabel(next);
-    debugLog(reason, { keyword: label, current: currentSearchKeyword() });
+    const beforeSignature = jobListSignature();
+    const beforeKeywordMatched = keywordResultMatches(next);
+    debugLog(reason, { keyword: label, current: currentSearchKeyword(), beforeSignature });
     updateStatus(statusSummary(`正在搜索关键词：${label}`));
-    if (sameQueryKeyword(next, currentSearchKeyword())) return "same";
-    const searchedOnPage = await searchKeywordOnPage(next);
-    if (searchedOnPage) {
-      await sleep(SEARCH_PAGE_LOAD_WAIT_MS);
-      if (!sameQueryKeyword(next, currentSearchKeyword())) {
-        return navigateToKeyword(next) ? "navigated" : "searched_on_page";
-      }
-      return "searched_same_url";
+    if (state.campaign) {
+      state.campaign.phase = "submit_search";
+      state.campaign.currentKeyword = next;
+      state.campaign.keywordSearchStatus = "submitting";
+      state.campaign.keywordListSignature = beforeSignature;
+      state.campaign.keywordError = "";
+      saveCampaign();
     }
-    return navigateToKeyword(next) ? "navigated" : "same";
+    const search = await performKeywordSearch(next, beforeSignature);
+    if (search.method === "navigation") return "navigated";
+    if (state.campaign) {
+      state.campaign.phase = "wait_results";
+      state.campaign.keywordSearchStatus = search.method;
+      saveCampaign();
+    }
+    const ready = await waitForKeywordResults(next, beforeSignature, beforeKeywordMatched);
+    if (!ready.ok) {
+      if (state.campaign?.active) {
+        state.campaign.active = false;
+        state.campaign.paused = true;
+        state.campaign.phase = "search_failed";
+        state.campaign.keywordSearchStatus = "failed";
+        state.campaign.keywordError = ready.reason;
+        state.pausedByUserThisSession = true;
+        saveCampaign();
+      }
+      debugLog("keyword_search_timeout", { keyword: label, reason: ready.reason, pageState: ready.pageState });
+      updateStatus(statusSummary(`未确认“${label}”的搜索结果，已暂停，避免扫描旧列表。`));
+      return "failed";
+    }
+    if (state.campaign) {
+      state.campaign.phase = "scan_results";
+      state.campaign.keywordSearchStatus = "ready";
+      state.campaign.keywordListSignature = ready.pageState?.listSignature || "";
+      state.campaign.keywordError = "";
+      saveCampaign();
+    }
+    debugLog("keyword_results_ready", { keyword: label, ready });
+    return search.method === "same" ? "same" : "searched_on_page";
+  }
+
+  async function switchToKeyword(keyword, reason = "keyword_switch") {
+    return ensureKeywordReady(keyword, reason);
   }
 
   function randomRestMs() {
@@ -2338,6 +2997,10 @@
     const fromKeyword = keywordLabel(keywordFromCampaign());
     state.campaign.index += 1;
     state.campaign.keywordScanned = 0;
+    state.campaign.phase = "prepare_keyword";
+    state.campaign.currentKeyword = state.campaign.keywords[state.campaign.index] || "";
+    state.campaign.keywordSearchStatus = "pending";
+    state.campaign.keywordError = "";
     if (state.campaign.index >= state.campaign.keywords.length) {
       state.campaign.active = false;
       state.campaign.paused = false;
@@ -2371,7 +3034,7 @@
         if (result !== "navigated" && state.campaign?.active && !state.campaign?.paused) {
           state.autoTimer = window.setTimeout(() => {
             if (!state.campaign?.active || state.campaign?.paused) return;
-            start({ campaignMode: true });
+            start({ campaignMode: true, resumeCampaign: true });
           }, 500);
         }
         return;
@@ -2382,12 +3045,12 @@
   }
 
   function seedProcessedFromRecords() {
+    state.historicalSeen = new Set();
     if (!config.filters.skipRecorded) return;
-    const before = state.processed.size;
     for (const record of state.records) {
-      if (record.href) state.processed.add(record.href);
+      if (record.href) state.historicalSeen.add(record.href);
     }
-    const added = state.processed.size - before;
+    const added = state.historicalSeen.size;
     if (added > 0) updateStatus(`已载入 ${added} 条历史岗位，启动后会跳过这些已扫岗位。`);
   }
 
@@ -2409,9 +3072,9 @@
     setPanelValue("#baf-pause-max", config.safety.pauseMaxSec);
     setPanelChecked("#baf-local-ai-info", config.localAi.queryInfo);
     setPanelChecked("#baf-auto-greet", config.greeting.enabled);
+    setPanelValue("#baf-greet-min-score", config.greeting.minScore || config.threshold);
     setPanelValue("#baf-greet-limit", config.greeting.dailyLimit);
     setPanelValue("#baf-greet-template", config.greeting.template);
-    setPanelValue("#baf-ai-key", state.aiSettings.apiKey);
     setPanelValue("#baf-ai-model", state.aiSettings.model || "deepseek-v4-flash");
     setPanelValue("#baf-positive", (config.filters.customPositive || []).join("\n"));
     setPanelValue("#baf-negative", (config.filters.customNegative || []).join("\n"));
@@ -2424,8 +3087,10 @@
     const title = panel.querySelector(".baf-title");
     const clampPanelPosition = () => {
       const r = panel.getBoundingClientRect();
-      const nextLeft = Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - panel.offsetWidth - 8));
-      const nextTop = Math.min(Math.max(8, r.top), Math.max(8, window.innerHeight - panel.offsetHeight - 8));
+      const maxLeft = Math.max(8, window.innerWidth - Math.min(panel.offsetWidth, window.innerWidth - 16) - 8);
+      const maxTop = Math.max(8, window.innerHeight - Math.min(panel.offsetHeight, window.innerHeight - 16) - 8);
+      const nextLeft = Math.min(Math.max(8, r.left), maxLeft);
+      const nextTop = Math.min(Math.max(8, r.top), maxTop);
       panel.style.left = `${nextLeft}px`;
       panel.style.top = `${nextTop}px`;
       panel.style.right = "auto";
@@ -2463,8 +3128,10 @@
     });
     window.addEventListener("mousemove", e => {
       if (!dragging) return;
-      const nextLeft = Math.min(Math.max(8, startLeft + e.clientX - startX), window.innerWidth - panel.offsetWidth - 8);
-      const nextTop = Math.min(Math.max(8, startTop + e.clientY - startY), window.innerHeight - panel.offsetHeight - 8);
+      const maxLeft = Math.max(8, window.innerWidth - Math.min(panel.offsetWidth, window.innerWidth - 16) - 8);
+      const maxTop = Math.max(8, window.innerHeight - Math.min(panel.offsetHeight, window.innerHeight - 16) - 8);
+      const nextLeft = Math.min(Math.max(8, startLeft + e.clientX - startX), maxLeft);
+      const nextTop = Math.min(Math.max(8, startTop + e.clientY - startY), maxTop);
       panel.style.left = `${nextLeft}px`;
       panel.style.top = `${nextTop}px`;
     });
@@ -2482,7 +3149,7 @@
     panel.innerHTML = `
       <div class="baf-title">
         <div class="baf-title-main">
-          <strong>Auto Apply on BOSS <span class="baf-version">v2.0.2</span></strong>
+          <strong>BOSS-Auto-Job-Extension <span class="baf-version">v2.0.6</span></strong>
           <span>职位列表</span>
         </div>
         <button id="baf-toggle" type="button">收起</button>
@@ -2494,6 +3161,7 @@
           <div class="baf-section-title">当前动作</div>
           <strong id="baf-current-action-text">等待开始扫描</strong>
           <span id="baf-last-result">最近结果：还没有岗位结果</span>
+          <span id="baf-last-runtime-log">运行日志：还没有启动事件</span>
         </div>
         <div class="baf-protection-row">
           <span id="baf-protection-text">本次 0｜藏 0｜复 0｜今日扫 0/500｜藏 0/80｜招呼 0/20</span>
@@ -2575,9 +3243,9 @@
           <div id="baf-recent-export" class="baf-hint">最近导出：还没有复制操作</div>
         </div>
 
-        <div class="baf-section baf-local-ai">
-          <label><input id="baf-local-ai-info" type="checkbox" checked />本地未知时用 AI 查询信息</label>
-          <div class="baf-hint">默认关闭。开启后只在本地未识别出明确信息、且已填 API Key 时请求 AI。</div>
+          <div class="baf-section baf-local-ai">
+          <label><input id="baf-local-ai-info" type="checkbox" checked />LLM 判断岗位详情</label>
+          <div class="baf-hint">默认开启。保存 API Key 后，扫描时会先确认岗位详情，再调用 AI 给出最终判断；没有 Key 时不能启动扫描。</div>
         </div>
 
         <div class="baf-section baf-greeting">
@@ -2585,10 +3253,11 @@
           <div class="baf-hint">默认关闭；开启后只在收藏成功后尝试。</div>
           <div class="baf-field">
             <label><input id="baf-auto-greet" type="checkbox" />开启自动打招呼</label>
+            <label>最低分 <input id="baf-greet-min-score" value="${config.greeting.minScore || config.threshold}" /> 分</label>
             <label>今日最多 <input id="baf-greet-limit" value="${config.greeting.dailyLimit}" /> 次</label>
           </div>
           <textarea id="baf-greet-template">${escapeHtml(config.greeting.template)}</textarea>
-          <div class="baf-hint">找不到发送按钮时只写入模板并记录，不强行发送。</div>
+          <div class="baf-hint">只对已收藏且达到最低分的岗位发送编辑好的内容；找不到同一聊天窗口的发送按钮会记录失败，不跨窗口误点。</div>
         </div>
 
         <details class="baf-section baf-advanced">
@@ -2606,7 +3275,7 @@
               <input id="baf-ai-model" class="baf-ai-model" value="${escapeAttr(state.aiSettings.model || "deepseek-v4-flash")}" />
               <button id="baf-show-key" type="button" class="baf-mini-primary">显示 Key</button>
             </div>
-            <div class="baf-hint">API 地址固定；Key 当前保存在本地浏览器。使用 AI 生成时会作为 Authorization 请求头发送到 API 地址。</div>
+            <div class="baf-hint">API 地址固定；Key 保存在扩展私有存储中，AI 请求由后台脚本读取 Key 并添加 Authorization。</div>
           </div>
           <div class="baf-field">
             <label>当前列表最多扫</label>
@@ -2651,7 +3320,7 @@
         </div>
         <div class="baf-section baf-boundary">
           <div class="baf-section-title">使用边界</div>
-          <div class="baf-hint">第一版只做岗位粗筛、收藏、记录和复核；默认不自动打招呼，只有开启后才在收藏成功后尝试；不自动投递、不读取聊天。遇到验证、登录异常或账号提示，立即停止。</div>
+          <div class="baf-hint">只做岗位粗筛、收藏、记录和复核；默认不自动打招呼，开启后仅对已收藏且达标岗位发送编辑好的招呼内容；不自动投递、不读取聊天。遇到验证、登录异常或账号提示，立即停止。</div>
         </div>
       </div>
       <div class="baf-actions">
@@ -2670,6 +3339,7 @@
             <button id="baf-copy-review-only" class="baf-mini-primary">仅复制待复核</button>
             <button id="baf-copy-failure-only" class="baf-mini-primary">仅复制收藏失败</button>
             <button id="baf-clear-failures" class="baf-mini-primary">清空收藏失败</button>
+            <button id="baf-copy-runtime-log" class="baf-muted">复制运行日志</button>
             <button id="baf-debug" class="baf-muted">复制诊断</button>
             <button id="baf-clear" class="baf-muted">清空表</button>
           </div>
@@ -2695,10 +3365,12 @@
     style.textContent = `
       #boss-ai-autofav-panel {
         position: fixed;
-        right: 18px;
-        bottom: 18px;
-        width: 520px;
-        max-height: 84vh;
+        right: max(8px, env(safe-area-inset-right));
+        bottom: max(8px, env(safe-area-inset-bottom));
+        width: min(520px, calc(100vw - 16px));
+        max-width: calc(100vw - 16px);
+        max-height: min(84vh, calc(100vh - 16px));
+        box-sizing: border-box;
         z-index: 2147483647;
         background: #ffffff;
         color: #111827;
@@ -2711,8 +3383,13 @@
         flex-direction: column;
       }
       #boss-ai-autofav-panel.baf-collapsed {
-        width: 390px;
+        width: min(390px, calc(100vw - 16px));
         max-height: none;
+      }
+      #boss-ai-autofav-panel *,
+      #boss-ai-autofav-panel *::before,
+      #boss-ai-autofav-panel *::after {
+        box-sizing: border-box;
       }
       #boss-ai-autofav-panel.baf-collapsed .baf-body,
       #boss-ai-autofav-panel.baf-collapsed .baf-actions,
@@ -2771,6 +3448,7 @@
         display: flex;
         gap: 7px;
         align-items: center;
+        min-width: 0;
       }
       #boss-ai-autofav-panel .baf-actions {
         flex: 0 0 auto;
@@ -2785,6 +3463,7 @@
         overflow: auto;
         flex: 1 1 auto;
         min-height: 160px;
+        overscroll-behavior: contain;
         background: #f8fafc;
       }
       #boss-ai-autofav-panel .baf-section {
@@ -2818,7 +3497,7 @@
       }
       #boss-ai-autofav-panel .baf-grid {
         display: grid;
-        grid-template-columns: 1fr 1.35fr;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
         gap: 8px;
         align-items: end;
       }
@@ -2831,6 +3510,7 @@
       }
       #boss-ai-autofav-panel input {
         width: 58px;
+        max-width: 100%;
         padding: 6px 7px;
         border-radius: 8px;
         border: 1px solid #d1d5db;
@@ -2859,6 +3539,7 @@
         align-items: center;
         margin-bottom: 7px;
         flex-wrap: wrap;
+        min-width: 0;
       }
       #boss-ai-autofav-panel .baf-field label {
         color: #374151;
@@ -2886,7 +3567,7 @@
       }
       #boss-ai-autofav-panel .baf-threshold-row {
         display: grid;
-        grid-template-columns: auto 1fr auto;
+        grid-template-columns: auto minmax(0, 1fr) auto;
         gap: 8px;
         align-items: center;
       }
@@ -3001,6 +3682,7 @@
       }
       #boss-ai-autofav-panel textarea {
         width: 100%;
+        max-width: 100%;
         height: 56px;
         margin-top: 4px;
         box-sizing: border-box;
@@ -3024,6 +3706,7 @@
       }
       #boss-ai-autofav-panel button {
         padding: 7px 10px;
+        min-height: 32px;
         border-radius: 8px;
         border: 0;
         cursor: pointer;
@@ -3031,6 +3714,8 @@
         color: #111827;
         font-weight: 700;
         font-size: 12px;
+        line-height: 1.2;
+        white-space: nowrap;
       }
       #boss-ai-autofav-panel button:hover {
         filter: brightness(.96);
@@ -3070,7 +3755,7 @@
         background: #f0fdfa;
         border-bottom: 1px solid #ccfbf1;
         flex: 0 0 auto;
-        overflow: visible;
+        overflow: hidden;
         white-space: pre-line;
         font-size: 12px;
         line-height: 1.22;
@@ -3092,7 +3777,7 @@
         align-items: baseline;
       }
       #boss-ai-autofav-panel .baf-current-action .baf-section-title {
-        grid-row: span 2;
+        grid-row: span 3;
         margin: 0;
       }
       #boss-ai-autofav-panel .baf-current-action strong {
@@ -3210,9 +3895,9 @@
         font-weight: 700;
       }
       #boss-ai-autofav-panel .baf-more-grid {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
         gap: 7px;
-        flex-wrap: wrap;
         padding: 0 8px 8px;
       }
       #boss-ai-autofav-panel .baf-ai-row {
@@ -3252,6 +3937,57 @@
       .baf-action.exclude { color: #64748b; }
       .baf-action.skip { color: #dc2626; }
       .baf-small { color: #64748b; font-size: 12px; }
+      @media (max-width: 560px), (max-height: 620px) {
+        #boss-ai-autofav-panel {
+          right: 8px;
+          bottom: 8px;
+          width: calc(100vw - 16px);
+          max-height: calc(100vh - 16px);
+          border-radius: 10px;
+        }
+        #boss-ai-autofav-panel.baf-collapsed {
+          width: calc(100vw - 16px);
+        }
+        #boss-ai-autofav-panel .baf-grid,
+        #boss-ai-autofav-panel .baf-feedback-grid {
+          grid-template-columns: 1fr;
+        }
+        #boss-ai-autofav-panel .baf-threshold-row {
+          grid-template-columns: 1fr;
+          align-items: stretch;
+        }
+        #boss-ai-autofav-panel .baf-threshold-segments {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        #boss-ai-autofav-panel .baf-score-inline {
+          justify-content: space-between;
+        }
+        #boss-ai-autofav-panel .baf-current-action {
+          grid-template-columns: 1fr;
+        }
+        #boss-ai-autofav-panel .baf-current-action .baf-section-title {
+          grid-row: auto;
+        }
+        #boss-ai-autofav-panel .baf-protection-row {
+          align-items: stretch;
+          flex-direction: column;
+        }
+        #boss-ai-autofav-panel .baf-protection-row span {
+          white-space: normal;
+        }
+        #boss-ai-autofav-panel .baf-actions > button {
+          flex: 1 1 96px;
+        }
+      }
+      @media (max-height: 520px) {
+        #boss-ai-autofav-panel .baf-status-card {
+          max-height: 132px;
+          overflow: auto;
+        }
+        #boss-ai-autofav-panel .baf-body {
+          min-height: 96px;
+        }
+      }
     `;
     document.body.appendChild(style);
     document.body.appendChild(panel);
@@ -3294,7 +4030,7 @@
       if (keywords) keywords.disabled = mode === "current";
       const startButton = panel.querySelector("#baf-start");
       if (startButton) {
-        startButton.textContent = mode === "task" ? "\u542f\u52a8/\u7ee7\u7eed\u591a\u8bcd" : "\u5f00\u59cb\u626b\u63cf";
+        startButton.textContent = mode === "task" ? "启动/继续" : "\u5f00\u59cb\u626b\u63cf";
         startButton.classList.toggle("baf-primary", mode === "task");
         startButton.classList.toggle("baf-secondary", mode !== "task");
       }
@@ -3327,6 +4063,17 @@
       const visibleKey = input.type === "text";
       input.type = visibleKey ? "password" : "text";
       panel.querySelector("#baf-show-key").textContent = visibleKey ? "显示 Key" : "隐藏 Key";
+    });
+    panel.querySelector("#baf-ai-key")?.addEventListener("change", async () => {
+      state.aiSettings.apiKey = String(panel.querySelector("#baf-ai-key")?.value || "").trim();
+      state.aiSettings.model = String(panel.querySelector("#baf-ai-model")?.value || state.aiSettings.model || "deepseek-v4-flash").trim();
+      await saveAiSettings();
+      updateStatus(statusSummary("AI Key 已保存到扩展私有存储。"));
+    });
+    panel.querySelector("#baf-ai-model")?.addEventListener("change", async () => {
+      state.aiSettings.model = String(panel.querySelector("#baf-ai-model")?.value || state.aiSettings.model || "deepseek-v4-flash").trim();
+      await saveAiSettings();
+      updateStatus(statusSummary("AI 模型设置已保存。"));
     });
     panel.querySelector("#baf-generate-profile")?.addEventListener("click", async () => {
       readPanelConfig();
@@ -3435,6 +4182,11 @@
       if (!window.confirm("确认清空收藏失败记录？")) return;
       clearFavoriteFailures();
     });
+    panel.querySelector("#baf-copy-runtime-log")?.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(runtimeLogText());
+      debugLog("runtime_log_copy");
+      updateStatus(statusSummary(`运行日志已复制，共 ${state.debugLogs.length} 条。`));
+    });
     panel.querySelector("#baf-debug").addEventListener("click", async () => {
       debugLog("diagnostics_copy");
       await navigator.clipboard.writeText(diagnosticsJson());
@@ -3509,11 +4261,12 @@
   }
 
   function aiConfigured() {
-    return Boolean(String(document.querySelector("#baf-ai-key")?.value || state.aiSettings.apiKey || "").trim());
+    return Boolean(String(document.querySelector("#baf-ai-key")?.value || "").trim() || state.aiSettings.hasKey);
   }
 
-  function callDeepSeek(messages, maxTokens = 1400) {
+  async function callDeepSeek(messages, maxTokens = 1400) {
     readPanelConfig();
+    await saveAiSettings();
     return new Promise((resolve, reject) => {
       if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
         reject(new Error("当前扩展环境不支持后台请求"));
@@ -3521,7 +4274,6 @@
       }
       chrome.runtime.sendMessage({
         type: "deepseek-chat",
-        apiKey: state.aiSettings.apiKey,
         model: state.aiSettings.model || "deepseek-v4-flash",
         messages,
         maxTokens
@@ -3870,7 +4622,6 @@
   }
 
   function updatePanel() {
-    updateStatus(statusSummary(`状态：${state.running ? "运行中" : "停止"}`));
     updateTodayProgress();
     const setText = (selector, text) => {
       const el = document.querySelector(selector);
@@ -3907,6 +4658,7 @@
     setText("#baf-last-result", recent
       ? `最近结果：${actionLabel(recent.action)}｜${recent.score}分｜${recent.title || ""}`
       : "最近结果：还没有岗位结果");
+    updateRuntimeLogPreview();
     setText("#baf-failure-count", `${favoriteFailureRecords().length} 条`);
     setText("#baf-protection-text", `本次 ${state.scanned}｜藏 ${state.favorited}｜复 ${state.reviewed}｜跳 ${state.skipped}｜错 ${state.errors}｜今日扫 ${state.daily.scanned}/${config.safety.dailyScanLimit || "不限"}｜藏 ${state.daily.favorited}/${config.safety.dailyFavoriteLimit || "不限"}｜招呼 ${state.daily.greeted || 0}/${config.greeting?.dailyLimit || "不限"}`);
     const box = document.querySelector("#baf-log");
@@ -3934,6 +4686,7 @@
         ${r.mainReason ? `<div class="baf-small">原因：${escapeHtml(r.mainReason)}</div>` : ""}
         <div class="baf-small">命中：${escapeHtml(hits)}</div>
         <div class="baf-small">扣分：${escapeHtml(negatives)}</div>
+        ${r.detailMatched || r.detailChanged || r.detailHrefMatched ? `<div class="baf-small">详情：匹配 ${escapeHtml(r.detailMatched || "-")}｜切换 ${escapeHtml(r.detailChanged || "-")}｜链接 ${escapeHtml(r.detailHrefMatched || "-")}</div>` : ""}
         ${reviewNotes ? `<div class="baf-small">复核：${escapeHtml(reviewNotes)}</div>` : ""}
         ${r.decisionLog ? `<div class="baf-small">决策：${escapeHtml(r.decisionLog)}</div>` : ""}
         ${r.favoriteResult ? `<div class="baf-small">收藏：${escapeHtml(r.favoriteResult)}</div>` : ""}
@@ -3946,52 +4699,68 @@
   async function processJob(job) {
     debugLog("process_job_start", { title: job.title, href: job.href });
     job.card.scrollIntoView({ block: "center", inline: "nearest" });
-    const detailAnchor = job.card.tagName === "A"
-      ? job.card
-      : job.card.querySelector?.('a[href*="/job_detail/"]');
-    const clickTarget = detailAnchor && detailAnchor !== job.card
-      ? (job.card.matches?.("a") ? job.card.parentElement || job.card : job.card)
-      : job.card;
-    const preventNavigation = event => {
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    detailAnchor?.addEventListener("click", preventNavigation, { capture: true, once: true });
-    clickTarget.dispatchEvent(new MouseEvent("click", {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      ctrlKey: false,
-      metaKey: false,
-      shiftKey: false,
-      altKey: false
-    }));
-    await sleep(jitter());
-    const detail = rightPanelText();
+    await sleep(250);
+    const beforeDetail = detailSnapshot();
+    const clickResult = clickJobCard(job);
+    debugLog("job_card_clicked", {
+      title: job.title,
+      href: job.href,
+      clickMethod: clickResult.method,
+      clickHref: clickResult.href,
+      beforeSignature: beforeDetail.signature
+    });
+    const detailResult = await waitForJobDetail(job, beforeDetail.signature, Math.max(6000, jitter() + 1800));
+    if (!detailResult.ok) {
+      debugLog("job_detail_not_confirmed", {
+        title: job.title,
+        href: job.href,
+        beforeSignature: beforeDetail.signature,
+        afterSignature: detailResult.signature,
+        matched: detailResult.matched,
+        matchReason: detailResult.matchReason,
+        hrefMatched: detailResult.hrefMatched,
+        selected: detailResult.selected
+      });
+      throw new JobDetailNotConfirmedError("未确认右侧详情已切换到当前岗位，已暂停，避免使用旧详情判断", {
+        beforeSignature: beforeDetail.signature,
+        afterSignature: detailResult.signature,
+        matchReason: detailResult.matchReason,
+        hrefMatched: detailResult.hrefMatched,
+        selected: detailResult.selected
+      });
+    }
+    const detail = detailResult.text;
     const combined = `${job.title} ${job.cardText} ${detail}`;
-    const result = scoreJob(combined);
+    const localResult = scoreJob(combined);
     const filterResult = evaluateFilters(combined);
+    const llmResult = await judgeJobWithLlm(job, detail, localResult, filterResult);
     const record = {
       time: new Date().toISOString(),
       title: job.title,
       href: job.href,
       cardText: job.cardText,
+      detailMatched: detailResult.matched ? `是：${detailResult.matchReason || "标题"}` : "否",
+      detailChanged: detailResult.changed ? "是" : "否",
+      detailHrefMatched: detailResult.hrefMatched ? "是" : "否",
       companyScale: currentCompanyScaleLabel(),
-      score: result.score,
-      hits: result.hits,
-      negatives: [...result.negatives, ...filterResult.negatives],
-      filterNotes: filterResult.notes,
-      reviewNotes: result.reviewNotes || [],
+      score: llmResult.score,
+      hits: llmResult.hits,
+      negatives: llmResult.negatives,
+      filterNotes: llmResult.filterNotes,
+      reviewNotes: llmResult.reviewNotes || [],
       action: "exclude",
       ruleVersion: RULE_VERSION,
-      needsReview: false
+      needsReview: false,
+      mainReason: llmResult.mainReason,
+      decisionLog: llmResult.decisionLog,
+      recommendedAction: llmResult.recommendedAction
     };
-    const blocked = result.hardExcluded || filterResult.hardExcluded;
+    const blocked = llmResult.hardExcluded || filterResult.hardExcluded;
     const blockReason = blocked
-      ? `命中硬排除或硬过滤:${[...result.negatives, ...filterResult.negatives].slice(0, 3).join("、") || "未记录"}`
+      ? `LLM 或过滤规则判定排除:${llmResult.negatives.slice(0, 3).join("、") || "未记录"}`
       : "";
-    const shouldFavorite = result.score >= config.threshold && !blocked;
-    const shouldReview = result.score >= REVIEW_THRESHOLD && result.score < config.threshold && !blocked;
+    const shouldFavorite = llmResult.action === "favorite" && !blocked;
+    const shouldReview = llmResult.action === "review" && !blocked;
     let decisionContext = { blocked, blockReason };
     if (shouldFavorite && favoriteLimitReached()) {
       record.filterNotes.push(`达到今日收藏安全上限 ${config.safety.dailyFavoriteLimit}`);
@@ -4011,7 +4780,7 @@
         state.favorited += 1;
         state.daily.favorited += 1;
         try {
-          record.greetingResult = await tryAutoGreeting();
+          record.greetingResult = await tryAutoGreeting(job, record);
         } catch (error) {
           record.greetingResult = `自动打招呼失败：${String(error?.message || error)}`;
           debugLog("auto_greeting_error", { title: job.title, href: job.href, error: record.greetingResult });
@@ -4022,22 +4791,22 @@
     } else if (shouldReview) {
       record.action = "review";
       record.needsReview = true;
-      record.recommendedAction = "人工复核";
-      decisionContext.reviewReason = `分数达到复核线但低于收藏线，未自动收藏`;
+      record.recommendedAction = record.recommendedAction || "人工复核";
+      decisionContext.reviewReason = llmResult.decisionLog || "LLM 建议人工复核";
       state.reviewed += 1;
     } else {
       record.action = "exclude";
       decisionContext.excludeReason = blocked
-        ? "命中硬排除或硬过滤，直接排除"
-        : `分数低于复核线 ${REVIEW_THRESHOLD}，未收藏`;
+        ? "LLM 或过滤规则判定直接排除"
+        : (llmResult.decisionLog || "LLM 建议跳过");
       state.skipped += 1;
     }
     record.processingStatus = actionLabel(record.action);
     record.recommendedAction = record.recommendedAction || recommendedActionFor(record);
-    record.mainReason = mainReasonFor(record);
-    record.decisionLog = buildDecisionLog(record, decisionContext);
+    record.mainReason = record.mainReason || mainReasonFor(record);
+    record.decisionLog = record.decisionLog || buildDecisionLog(record, decisionContext);
     countProcessedAttempt();
-    state.processed.add(job.href);
+    state.processedThisRun.add(job.href);
     log(record);
     debugLog("process_job_done", {
       title: job.title,
@@ -4055,19 +4824,29 @@
     readPanelConfig();
     saveDailyStats();
     debugLog("start_called", { options });
+    if (!aiConfigured()) {
+      const message = "未保存 API Key，无法启动扫描。请先在高级规则 / AI Key 中保存 Key；岗位判断必须经过 LLM。";
+      updateStatus(statusSummary(message));
+      setNote("#baf-rules-note", message);
+      debugLog("start_blocked_missing_ai_key");
+      return;
+    }
     if (options.campaignMode) {
       const typedKeywords = parseKeywordList(document.querySelector("#baf-keywords")?.value || "");
       if (!typedKeywords.length) {
         updateStatus(statusSummary("多关键词模式缺少搜索词：请先填写或生成搜索词。"));
         setNote("#baf-keyword-note", "多关键词模式会先按搜索词搜索，再扫描搜索结果。请先填写或生成至少一个搜索词。");
+        debugLog("start_blocked_missing_keywords");
         return;
       }
-      const campaignStart = resumeOrCreateCampaign({ resumePaused: Boolean(options.resumePaused) });
-      if (!campaignStart.resumed) {
+      const campaignStart = options.resumeCampaign && state.campaign?.active
+        ? { resumed: true, autoResume: true }
+        : resumeOrCreateCampaign({ resumePaused: Boolean(options.resumePaused) });
+      if (!campaignStart.resumed && !campaignStart.autoResume) {
         resetRunCounters();
         state.pausedByUserThisSession = false;
       }
-      if (!campaignStart.resumed && !norm(keywordFromCampaign())) {
+      if (!campaignStart.resumed && !campaignStart.autoResume && !norm(keywordFromCampaign())) {
         const firstRealIndex = (state.campaign?.keywords || []).findIndex(keyword => norm(keyword));
         if (firstRealIndex >= 0 && Number(state.campaign?.keywordScanned || 0) === 0) {
           state.campaign.index = firstRealIndex;
@@ -4075,13 +4854,11 @@
         }
       }
       const firstKeyword = keywordFromCampaign();
-      if (!sameQueryKeyword(firstKeyword, currentSearchKeyword())) {
-        const actionText = campaignStart.resumed ? "\u51c6\u5907\u7ee7\u7eed" : "\u51c6\u5907\u641c\u7d22";
-        debugLog("navigate_first_keyword", { resumed: campaignStart.resumed, keyword: keywordLabel(firstKeyword) });
-        updateStatus(statusSummary(`${actionText}\u7b2c ${Number(state.campaign?.index || 0) + 1} \u4e2a\u5173\u952e\u8bcd\uff1a${keywordLabel(firstKeyword)}`));
-        const result = await switchToKeyword(firstKeyword, "navigate_first_keyword");
-        if (result === "navigated") return;
-      }
+      const actionText = campaignStart.resumed ? "\u51c6\u5907\u7ee7\u7eed" : "\u51c6\u5907\u641c\u7d22";
+      debugLog("prepare_first_keyword", { resumed: campaignStart.resumed, keyword: keywordLabel(firstKeyword) });
+      updateStatus(statusSummary(`${actionText}\u7b2c ${Number(state.campaign?.index || 0) + 1} \u4e2a\u5173\u952e\u8bcd\uff1a${keywordLabel(firstKeyword)}`));
+      const result = await ensureKeywordReady(firstKeyword, "prepare_first_keyword");
+      if (result === "navigated" || result === "failed") return;
     } else if (!options.resumeCampaign) {
       state.campaign = null;
       saveCampaign();
@@ -4111,10 +4888,11 @@
     let consecutiveErrors = 0;
     let finishCurrentKeyword = false;
     const startedScanned = state.scanned;
-    if (state.campaign?.active && currentSearchKeyword() === keywordFromCampaign()) {
-      updateStatus(statusSummary(`\u6b63\u5728\u641c\u7d22\u5e76\u52a0\u8f7d\u5173\u952e\u8bcd\u7ed3\u679c\uff1a${keywordLabel(keywordFromCampaign())}`));
-      debugLog("search_page_load_wait", { keyword: keywordLabel(keywordFromCampaign()), waitMs: SEARCH_PAGE_LOAD_WAIT_MS });
-      await sleep(SEARCH_PAGE_LOAD_WAIT_MS);
+    if (state.campaign?.active) {
+      state.campaign.phase = "scan_results";
+      state.campaign.keywordSearchStatus = "ready";
+      saveCampaign();
+      updateStatus(statusSummary(`已确认搜索结果，开始扫描：${keywordLabel(keywordFromCampaign())}`));
     }
     while (state.running && !finishCurrentKeyword) {
       const stopReason = safetyStopReason();
@@ -4139,9 +4917,11 @@
         break;
       }
       const visibleJobs = getJobLinks();
-      const jobs = visibleJobs.filter(j => !state.processed.has(j.href));
+      const jobs = visibleJobs.filter(j => !state.processedThisRun.has(j.href) && !state.historicalSeen.has(j.href));
+      const runDuplicateCount = visibleJobs.filter(j => state.processedThisRun.has(j.href)).length;
+      const historicalSkipCount = visibleJobs.filter(j => !state.processedThisRun.has(j.href) && state.historicalSeen.has(j.href)).length;
       const duplicateVisibleCount = visibleJobs.length - jobs.length;
-      debugLog("job_links_found", { count: jobs.length, visibleCount: visibleJobs.length, duplicateVisibleCount, scannedThisRun, currentLimit });
+      debugLog("job_links_found", { count: jobs.length, visibleCount: visibleJobs.length, duplicateVisibleCount, runDuplicateCount, historicalSkipCount, scannedThisRun, currentLimit });
       if (!jobs.length) {
         const onlySeenJobs = visibleJobs.length > 0 && duplicateVisibleCount > 0;
         if (onlySeenJobs) {
@@ -4167,7 +4947,7 @@
         scroller.scrollBy({ top: 720, behavior: "auto" });
         await sleep(1200);
         const afterVisibleJobs = getJobLinks();
-        const afterJobs = afterVisibleJobs.filter(j => !state.processed.has(j.href));
+        const afterJobs = afterVisibleJobs.filter(j => !state.processedThisRun.has(j.href) && !state.historicalSeen.has(j.href));
         if (afterJobs.length) {
           debugLog("empty_scroll_found_jobs", { count: afterJobs.length });
           staleRounds = 0;
@@ -4241,13 +5021,18 @@
         } catch (err) {
           state.errors += 1;
           consecutiveErrors += 1;
-          countProcessedAttempt();
-          state.processed.add(job.href);
+          const detailNotConfirmed = err instanceof JobDetailNotConfirmedError;
+          const llmJudgementFailed = err instanceof LlmJudgementError;
+          if (!detailNotConfirmed && !llmJudgementFailed) {
+            countProcessedAttempt();
+            state.processedThisRun.add(job.href);
+          }
           debugLog("process_job_error", {
             title: job.title,
             href: job.href,
             error: String(err && err.message || err),
-            consecutiveErrors
+            consecutiveErrors,
+            detail: err?.detail || null
           });
           log({
             time: new Date().toISOString(),
@@ -4261,10 +5046,42 @@
             ruleVersion: RULE_VERSION,
             needsReview: true,
             processingStatus: "错误",
-            recommendedAction: "跳过当前岗位，继续扫描",
-            mainReason: "页面处理失败"
+            recommendedAction: detailNotConfirmed
+              ? "刷新页面或复制运行日志排查详情切换"
+              : llmJudgementFailed
+                ? "检查 API Key、模型或网络后继续"
+                : "跳过当前岗位，继续扫描",
+            mainReason: detailNotConfirmed
+              ? "右侧详情未切换，已阻止旧详情判断"
+              : llmJudgementFailed
+                ? "LLM 岗位判断失败，已暂停"
+                : "页面处理失败",
+            transient: detailNotConfirmed || llmJudgementFailed,
+            decisionLog: detailNotConfirmed
+              ? `点击左侧岗位后，右侧详情未确认匹配当前岗位；${JSON.stringify(err?.detail || {})}`
+              : llmJudgementFailed
+                ? `LLM 判断未完成，禁止降级到本地规则；${JSON.stringify(err?.detail || {})}`
+                : ""
           });
           saveDailyStats();
+          if (detailNotConfirmed || llmJudgementFailed) {
+            updateStatus(statusSummary(detailNotConfirmed
+              ? "右侧详情没有切换到当前岗位，已暂停，避免继续用旧详情判断。"
+              : "LLM 岗位判断失败，已暂停；不会使用本地规则继续扫描。"));
+            if (state.campaign?.active) {
+              state.campaign.active = false;
+              state.campaign.paused = true;
+              state.campaign.phase = detailNotConfirmed ? "detail_failed" : "llm_judgement_failed";
+              state.campaign.keywordSearchStatus = detailNotConfirmed ? "detail_failed" : "llm_judgement_failed";
+              state.campaign.keywordError = String(err && err.message || err);
+              state.campaign.pausedAt = Date.now();
+              state.pausedByUserThisSession = true;
+              saveCampaign();
+            }
+            state.running = false;
+            finishCurrentKeyword = true;
+            break;
+          }
           updateStatus(statusSummary("处理单条岗位出错，已跳过并继续。"));
           if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
             updateStatus(statusSummary(`连续 ${consecutiveErrors} 条岗位处理失败，准备切换到下一个搜索词。`));
@@ -4287,12 +5104,19 @@
     }
   }
 
-  if (document.body) {
+  function bootPanel() {
     createPanel();
+    hydrateAiSettingsFromExtensionStorage().catch(error => {
+      debugLog("ai_settings_hydrate_error", { error: String(error?.message || error) });
+    });
+  }
+
+  if (document.body) {
+    bootPanel();
   } else {
     window.addEventListener("DOMContentLoaded", () => {
       if (!document.querySelector("#boss-ai-autofav-panel")) {
-        createPanel();
+        bootPanel();
       }
     }, { once: true });
   }
@@ -4302,7 +5126,7 @@
     updateStatus(`\u68c0\u6d4b\u5230\u672a\u5b8c\u6210\u4efb\u52a1\uff0c${Math.round(delay / 1000)} \u79d2\u540e\u7ee7\u7eed\uff1a${keywordLabel(keyword)}`);
     state.autoTimer = window.setTimeout(() => {
       if (!state.campaign?.active || state.campaign?.paused) return;
-      start({ campaignMode: true });
+      start({ campaignMode: true, resumeCampaign: true });
     }, delay);
   }
 })();
