@@ -1,0 +1,93 @@
+name: Build Extension Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v2.0.7. Leave empty to use manifest.json version."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read and validate version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./manifest.json').version")"
+          if [[ -z "$VERSION" ]]; then
+            echo "manifest.json version is empty" >&2
+            exit 1
+          fi
+
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.tag }}"
+            if [[ -z "$TAG" ]]; then
+              TAG="v${VERSION}"
+            fi
+          fi
+
+          if [[ "$TAG" != v* ]]; then
+            echo "Release tag must start with v, got: $TAG" >&2
+            exit 1
+          fi
+
+          TAG_VERSION="${TAG#v}"
+          if [[ "$TAG_VERSION" != "$VERSION" ]]; then
+            echo "Tag version ($TAG_VERSION) must match manifest.json version ($VERSION)" >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "zip_name=BOSS-Auto-Job-Extension-v${VERSION}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Validate JavaScript
+        run: |
+          node --check background.js
+          node --check content.js
+          node scripts/regression-checks.js
+
+      - name: Build extension zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist package
+          cp manifest.json background.js content.js README.md package/
+          if [[ -f docs-panel-console.png ]]; then cp docs-panel-console.png package/; fi
+          if [[ -f ui-mockups.html ]]; then cp ui-mockups.html package/; fi
+          cd package
+          zip -r "../dist/${{ steps.meta.outputs.zip_name }}" .
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.zip_name }}
+          path: dist/${{ steps.meta.outputs.zip_name }}
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: BOSS-Auto-Job-Extension ${{ steps.meta.outputs.tag }}
+          files: dist/${{ steps.meta.outputs.zip_name }}
+          generate_release_notes: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

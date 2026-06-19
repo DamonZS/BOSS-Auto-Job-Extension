@@ -143,6 +143,34 @@ node --check background.js
 node scripts/regression-checks.js
 ```
 
+## 版本更新
+
+面板顶部提供版本检测入口，会显示当前版本、GitHub 最新版本和最近检测时间。
+
+点击“检测”后，扩展会优先请求 GitHub Releases 最新版本；如果仓库还没有 Releases，会回退检查 `main` 分支的 `manifest.json`。发现新版本时，面板会强提示“发现新版本 vX.X.X”，并显示“下载”按钮。
+
+注意：普通 `git push` 只会上传代码，不会自动生成 Releases 或版本压缩包。要自动发版，需要推送版本标签，触发 GitHub Actions。
+
+发布新版本：
+
+```bash
+git add manifest.json background.js content.js README.md .github/workflows/release.yml
+git commit -m "chore: 发布 v2.0.7"
+git tag v2.0.7
+git push origin main
+git push origin v2.0.7
+```
+
+GitHub Actions 会自动校验脚本、打包扩展，并创建 GitHub Releases。也可以在 GitHub 仓库的 Actions 页面手动运行 `Build Extension Release`。
+
+手动更新步骤：
+
+1. 点击面板顶部的“下载”。如果已有 Release，会打开 GitHub Releases；如果 Releases 为空，会下载 `main.zip`。
+2. 下载最新版本压缩包。
+3. 解压到本地目录，保留自己的使用记录和 Key 不需要写进仓库。
+4. 打开 `chrome://extensions/`。
+5. 找到 `BOSS-Auto-Job-Extension`，点击重新加载；如果目录变了，重新“加载已解压的扩展程序”。
+
 ## 项目结构
 
 ```text
@@ -152,6 +180,8 @@ BOSS-Auto-Job-Extension/
 |-- content.js
 |-- docs-panel-console.png
 |-- ui-mockups.html
+|-- .github/
+|   `-- workflows/release.yml
 |-- scripts/
 |   `-- regression-checks.js
 `-- README.md

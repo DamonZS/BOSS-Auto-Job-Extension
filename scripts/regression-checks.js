@@ -3,6 +3,10 @@ const vm = require("vm");
 
 const source = fs.readFileSync("content.js", "utf8");
 const backgroundSource = fs.readFileSync("background.js", "utf8");
+const manifestSource = fs.readFileSync("manifest.json", "utf8");
+const releaseWorkflowSource = fs.existsSync(".github/workflows/release.yml")
+  ? fs.readFileSync(".github/workflows/release.yml", "utf8")
+  : "";
 const failures = [];
 
 function extractFunction(name) {
@@ -192,6 +196,16 @@ assertIncludes(panelSource, "baf-run-text", "run-state indicator should include 
 assertIncludes(panelSource, "baf-state-running", "run-state indicator should style running state");
 assertIncludes(panelSource, "baf-state-complete", "run-state indicator should style complete state");
 assertIncludes(panelSource, "baf-state-error", "run-state indicator should style error state");
+assertIncludes(panelSource, "baf-version-current", "panel should show the current extension version");
+assertIncludes(panelSource, "baf-version-latest", "panel should show the latest GitHub version");
+assertIncludes(panelSource, "baf-version-checked-at", "panel should show the update check time");
+assertIncludes(panelSource, "baf-check-update", "panel should expose a manual update check button");
+assertIncludes(panelSource, "baf-open-release", "panel should expose a one-click releases button");
+assertIncludes(panelSource, "v2.0.8", "panel should display the bumped extension version");
+assertIncludes(panelSource, "baf-about-box", "advanced rules should include an about box");
+assertIncludes(panelSource, "https://api.toporeduce.cn", "about box should link to TopoReduce");
+assertIncludes(panelSource, "招聘与技术交流 QQ 群", "about box should include a QQ group entry");
+assertIncludes(panelSource, "qm.qq.com/cgi-bin/qm/qr", "about box should use the requested QQ group URL");
 
 const saveAiSettingsSource = extractFunction("saveAiSettings");
 assertIncludes(saveAiSettingsSource, "storageLocalSet", "saveAiSettings should persist to extension storage");
@@ -230,6 +244,20 @@ assertIncludes(judgeJobWithLlmSource, "1-100", "LLM prompt should ask for free 1
 assertIncludes(judgeJobWithLlmSource, "不要只给 55、60、70", "LLM prompt should avoid coarse threshold-only scores");
 
 assertIncludes(backgroundSource, "function extractResponseContent", "background should normalize LLM response content");
+assertIncludes(manifestSource, "\"version\": \"2.0.8\"", "manifest version should be bumped for each released change");
+assertIncludes(manifestSource, "https://api.github.com/*", "manifest should allow GitHub API requests for update checks");
+assertIncludes(manifestSource, "https://raw.githubusercontent.com/*", "manifest should allow raw manifest fallback requests");
+assertIncludes(source, "event.stopPropagation();", "version buttons should not trigger panel drag handlers");
+assertIncludes(source, "button.textContent = \"检测中\"", "update check button should show visible progress");
+assertIncludes(backgroundSource, "boss-check-update", "background should handle GitHub version checks");
+assertIncludes(backgroundSource, "api.github.com/repos/DamonZS/BOSS-Auto-Job-Extension/releases/latest", "background should query GitHub latest release");
+assertIncludes(backgroundSource, "raw.githubusercontent.com/DamonZS/BOSS-Auto-Job-Extension/main/manifest.json", "background should fall back to main branch manifest when releases are unavailable");
+assertIncludes(backgroundSource, "archive/refs/heads/main.zip", "background should offer a main branch zip fallback download");
+assertIncludes(backgroundSource, "function checkGithubReleaseUpdate", "background should isolate GitHub release update checks");
+assertIncludes(backgroundSource, "function checkMainManifestUpdate", "background should isolate main manifest fallback checks");
+assertIncludes(backgroundSource, "source: \"main\"", "background should report fallback update source");
+assertIncludes(backgroundSource, "compareVersions", "background should compare semantic versions");
+assertIncludes(backgroundSource, "releaseUrl", "background should return a releases download URL");
 assertIncludes(backgroundSource, "choices?.[0]?.text", "background should support text completions response shape");
 assertIncludes(backgroundSource, "output_text", "background should support output_text response shape");
 assertIncludes(backgroundSource, "extractResponseContent(data)", "background should use normalized response extraction");
@@ -259,6 +287,22 @@ const generateRulesWithAiSource = extractFunction("generateRulesWithAi");
 assertIncludes(generateRulesWithAiSource, "readPanelConfig();", "rule generation should sync panel state before building the payload");
 assertIncludes(generateRulesWithAiSource, "aiProfilePayload({ useLiveConfigSummary: true })", "rule generation should use a live local config summary");
 assertIncludes(source, "normalizedNature 和 targetDirections", "search keyword prompt should strongly bind output to job nature and target directions");
+
+const readmeSource = fs.readFileSync("README.md", "utf8");
+assertIncludes(readmeSource, "版本更新", "README should document version updates");
+assertIncludes(readmeSource, "GitHub Releases", "README should mention GitHub Releases update flow");
+assertIncludes(readmeSource, "GitHub Actions", "README should document the automated release workflow");
+assertIncludes(readmeSource, "git push origin v", "README should explain tag push release publishing");
+assertIncludes(readmeSource, "main.zip", "README should document the fallback zip download");
+assertIncludes(readmeSource, "chrome://extensions/", "README should include manual extension reload steps");
+assertIncludes(releaseWorkflowSource, "on:", "release workflow should exist");
+assertIncludes(releaseWorkflowSource, "v*.*.*", "release workflow should run on version tags");
+assertIncludes(releaseWorkflowSource, "workflow_dispatch", "release workflow should support manual runs");
+assertIncludes(releaseWorkflowSource, "node --check background.js", "release workflow should validate background.js");
+assertIncludes(releaseWorkflowSource, "node --check content.js", "release workflow should validate content.js");
+assertIncludes(releaseWorkflowSource, "node scripts/regression-checks.js", "release workflow should run regression checks");
+assertIncludes(releaseWorkflowSource, "softprops/action-gh-release", "release workflow should create GitHub Releases");
+assertIncludes(releaseWorkflowSource, "BOSS-Auto-Job-Extension-v${VERSION}.zip", "release workflow should package versioned zip");
 assertIncludes(source, "如果当前 input 里没有某个岗位性质或目标方向，就不要擅自生成该方向的岗位名称", "search keyword prompt should forbid inventing unselected directions");
 assertIncludes(source, "不要输出 analysis 字段", "search keyword prompt should forbid exposing reasoning fields");
 assertIncludes(source, "const fromObject = sanitizeSearchKeywords(findAiArrayField(parsed, fieldNames), 30);", "search keyword generation should recursively read nested keyword arrays");

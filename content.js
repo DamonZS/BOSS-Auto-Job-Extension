@@ -13,6 +13,7 @@
   const KEYWORD_SWITCH_MIN_SEC = 3;
   const KEYWORD_SWITCH_MAX_SEC = 6;
   const SEARCH_PAGE_LOAD_WAIT_MS = 2500;
+  const RELEASES_URL = "https://github.com/DamonZS/BOSS-Auto-Job-Extension/releases";
 
   const config = {
     threshold: 60,
@@ -3282,10 +3283,18 @@
       <div class="baf-title">
         <div class="baf-title-main">
           <div class="baf-brand-row">
-            <strong>BOSS Auto Console <span class="baf-version">v2.0.6</span></strong>
+            <strong>BOSS Auto Console <span class="baf-version">v2.0.8</span></strong>
             <span class="baf-brand-tag">专业控制台</span>
           </div>
           <span>职位列表自动筛选、收藏与复核</span>
+          <div id="baf-version-panel" class="baf-title-version">
+            <span id="baf-version-message" class="baf-title-version-message">版本检测</span>
+            <span id="baf-version-current">v${escapeHtml(chrome.runtime?.getManifest?.().version || "2.0.8")}</span>
+            <span id="baf-version-latest">GitHub 未检测</span>
+            <span id="baf-version-checked-at">未检测</span>
+            <button id="baf-check-update" type="button">检测</button>
+            <button id="baf-open-release" type="button" class="baf-version-release">下载</button>
+          </div>
         </div>
         <div class="baf-title-actions">
           <div id="baf-run-state" class="baf-run-state baf-state-idle" title="灰灯｜未启动">
@@ -3536,6 +3545,16 @@
                   <label>正向词<textarea id="baf-positive" placeholder="每行一个，如：AI客服&#10;客户成功&#10;Agent"></textarea></label>
                   <label>反向词<textarea id="baf-negative" placeholder="每行一个，如：保险&#10;贷款&#10;营业员&#10;招生&#10;课程销售"></textarea></label>
                 </div>
+                <div class="baf-about-box">
+                  <div>
+                    <div class="baf-about-title">关于</div>
+                    <div class="baf-hint">拓扑熵减 API 服务与招聘、技术交流入口。</div>
+                  </div>
+                  <div class="baf-about-actions">
+                    <a class="baf-about-link" href="https://api.toporeduce.cn" target="_blank" rel="noreferrer">拓扑熵减官网</a>
+                    <a class="baf-qq-group" target="_blank" rel="noreferrer" href="https://qm.qq.com/cgi-bin/qm/qr?k=eJKMIonPkXEYYVLYL0xzE4Pr69ka9lhW&jump_from=webapi&authKey=Y36pgXGrlC/yha7tcXhsOzkpsMyT8seX5kc7nw+LoiBT2JQug/c5Uuvm3vVyDUMF">招聘与技术交流 QQ 群</a>
+                  </div>
+                </div>
                 <div id="baf-rules-note" class="baf-note"></div>
               </div>
             </div>
@@ -3622,22 +3641,76 @@
         border-bottom: 0;
       }
       #boss-ai-autofav-panel .baf-title {
-        padding: 14px 16px;
+        padding: 12px 16px;
         background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #0b1120 100%);
         color: #f8fafc;
         cursor: move;
         user-select: none;
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: space-between;
-        gap: 16px;
+        gap: 12px;
         border-bottom: 1px solid rgba(148, 163, 184, .18);
       }
       #boss-ai-autofav-panel .baf-title-main {
         display: flex;
         flex-direction: column;
-        gap: 5px;
+        gap: 4px;
         min-width: 0;
+        flex: 1 1 auto;
+      }
+      #boss-ai-autofav-panel .baf-title-version {
+        width: min(100%, 360px);
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 5px;
+        padding: 3px 5px;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, .28);
+        background: rgba(15, 23, 42, .32);
+        color: #cbd5e1;
+        font-size: 10px;
+        line-height: 1.1;
+        white-space: nowrap;
+        overflow: hidden;
+        cursor: default;
+      }
+      #boss-ai-autofav-panel .baf-title-version span {
+        color: #cbd5e1;
+        font-size: 10px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #boss-ai-autofav-panel .baf-title-version-message {
+        font-weight: 800;
+        color: #99f6e4 !important;
+        flex: 0 0 auto;
+      }
+      #boss-ai-autofav-panel .baf-title-version.baf-version-has-update {
+        border-color: rgba(250, 204, 21, .78);
+        background: rgba(120, 53, 15, .52);
+      }
+      #boss-ai-autofav-panel .baf-title-version.baf-version-has-update .baf-title-version-message {
+        color: #fde68a !important;
+      }
+      #boss-ai-autofav-panel .baf-title-version button {
+        flex: 0 0 auto;
+        min-height: 20px;
+        padding: 2px 6px;
+        border-radius: 6px;
+        border: 1px solid rgba(153, 246, 228, .34);
+        background: rgba(20, 184, 166, .16);
+        color: #ccfbf1;
+        font-size: 10px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      #boss-ai-autofav-panel .baf-title-version .baf-version-release {
+        display: none;
+        border-color: rgba(250, 204, 21, .62);
+        background: #facc15;
+        color: #713f12;
       }
       #boss-ai-autofav-panel .baf-brand-row {
         display: flex;
@@ -3678,6 +3751,8 @@
         justify-content: flex-end;
         gap: 8px;
         flex-wrap: wrap;
+        flex: 0 0 auto;
+        padding-top: 1px;
       }
       #boss-ai-autofav-panel .baf-run-state {
         min-width: 144px;
@@ -4293,6 +4368,52 @@
       #boss-ai-autofav-panel .baf-advanced-wide textarea {
         height: 58px;
       }
+      #boss-ai-autofav-panel .baf-about-box {
+        margin-top: 8px;
+        min-height: 82px;
+        padding: 10px;
+        border-radius: 9px;
+        border: 1px solid #cfe0f2;
+        background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      #boss-ai-autofav-panel .baf-about-title {
+        color: #0f172a;
+        font-size: 13px;
+        font-weight: 900;
+        margin-bottom: 2px;
+      }
+      #boss-ai-autofav-panel .baf-about-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      #boss-ai-autofav-panel .baf-about-link,
+      #boss-ai-autofav-panel .baf-qq-group {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 28px;
+        padding: 5px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 800;
+        text-decoration: none;
+        box-sizing: border-box;
+      }
+      #boss-ai-autofav-panel .baf-about-link {
+        border: 1px solid #bfdbfe;
+        background: #ffffff;
+        color: #1d4ed8;
+      }
+      #boss-ai-autofav-panel .baf-qq-group {
+        border: 1px solid #99f6e4;
+        background: #0f766e;
+        color: #ffffff;
+      }
       #boss-ai-autofav-panel .baf-failures {
         border-color: #fecaca;
         background: linear-gradient(180deg, #fff7f7 0%, #fffdfd 100%);
@@ -4438,6 +4559,10 @@
         #boss-ai-autofav-panel .baf-title {
           flex-direction: column;
           align-items: stretch;
+        }
+        #boss-ai-autofav-panel .baf-title-version {
+          width: 100%;
+          justify-content: flex-start;
         }
         #boss-ai-autofav-panel .baf-title-actions,
         #boss-ai-autofav-panel .baf-status-header,
@@ -4628,6 +4753,17 @@
       if (!window.confirm("确认清除已保存的第三方大模型 Key 吗？清除后需要重新填写才能启动扫描。")) return;
       const cleared = await clearAiKeySettings();
       updateStatus(statusSummary(cleared ? "AI Key 已从扩展私有存储清除。" : "AI Key 清除失败，请检查扩展存储权限。"));
+    });
+    panel.querySelector("#baf-check-update")?.addEventListener("click", async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      await refreshVersionStatus({ showAlert: true });
+    });
+    panel.querySelector("#baf-open-release")?.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const url = panel.querySelector("#baf-open-release")?.dataset.releaseUrl || RELEASES_URL;
+      window.open(url, "_blank", "noopener,noreferrer");
     });
     panel.querySelector("#baf-ai-model")?.addEventListener("change", async () => {
       state.aiSettings.model = String(panel.querySelector("#baf-ai-model")?.value || state.aiSettings.model || "deepseek-v4-flash").trim();
@@ -5029,6 +5165,108 @@
     modal.addEventListener("click", event => {
       if (event.target === modal) modal.remove();
     });
+  }
+
+  function currentExtensionVersion() {
+    return String(chrome.runtime?.getManifest?.().version || "2.0.8");
+  }
+
+  function formatUpdateCheckedAt(value) {
+    if (!value) return "未检测";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+
+  function setVersionStatus(result = {}) {
+    setText("#baf-version-current", `v${currentExtensionVersion()}`);
+    const sourceLabel = result.source === "main" ? "main" : "GitHub";
+    setText("#baf-version-latest", result.latestVersion ? `${sourceLabel} v${result.latestVersion}` : "GitHub 未检测");
+    setText("#baf-version-checked-at", formatUpdateCheckedAt(result.checkedAt));
+    const panel = document.querySelector("#baf-version-panel");
+    const releaseButton = document.querySelector("#baf-open-release");
+    const message = document.querySelector("#baf-version-message");
+    const hasUpdate = Boolean(result.hasUpdate);
+    panel?.classList.toggle("baf-version-has-update", hasUpdate);
+    if (releaseButton) {
+      releaseButton.style.display = hasUpdate ? "block" : "none";
+      releaseButton.dataset.releaseUrl = result.releaseUrl || RELEASES_URL;
+    }
+    if (message) {
+      message.textContent = result.error
+        ? `检测失败：${result.error}`
+        : result.message
+          ? result.message
+        : hasUpdate
+          ? result.source === "main"
+            ? `main 分支发现新版 v${result.latestVersion}`
+            : `发现新版 v${result.latestVersion}`
+          : result.latestVersion
+            ? "已是最新"
+            : "版本检测";
+    }
+  }
+
+  function checkGithubUpdate() {
+    return new Promise((resolve, reject) => {
+      if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+        reject(new Error("当前扩展环境不支持后台更新检测"));
+        return;
+      }
+      chrome.runtime.sendMessage({
+        type: "boss-check-update",
+        currentVersion: currentExtensionVersion()
+      }, response => {
+        const lastError = chrome.runtime.lastError;
+        if (lastError) {
+          reject(new Error(lastError.message));
+          return;
+        }
+        if (!response?.ok) {
+          reject(new Error(response?.error || "GitHub 更新检测失败"));
+          return;
+        }
+        resolve(response);
+      });
+    });
+  }
+
+  async function refreshVersionStatus({ showAlert = false } = {}) {
+    const button = document.querySelector("#baf-check-update");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "检测中";
+    }
+    setVersionStatus({ checkedAt: new Date().toISOString(), message: "检测中" });
+    try {
+      const result = await checkGithubUpdate();
+      setVersionStatus(result);
+      if (result.hasUpdate && showAlert) {
+        const downloadTarget = result.source === "main" ? "main.zip 下载包" : "GitHub Releases 下载页";
+        window.alert(`发现新版本 v${result.latestVersion}，点击“下载”打开 ${downloadTarget} 更新。`);
+      }
+      return result;
+    } catch (error) {
+      const result = {
+        ok: false,
+        error: String(error?.message || error),
+        checkedAt: new Date().toISOString(),
+        releaseUrl: RELEASES_URL
+      };
+      setVersionStatus(result);
+      if (showAlert) window.alert(`GitHub 更新检测失败：${result.error}`);
+      return result;
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "检测";
+      }
+    }
   }
 
   async function callDeepSeek(messages, maxTokens = 1400) {

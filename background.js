@@ -49,7 +49,105 @@ function logDeepSeekEvent(event, data = {}) {
   }
 }
 
+const GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/DamonZS/BOSS-Auto-Job-Extension/releases/latest";
+const GITHUB_RELEASES_URL = "https://github.com/DamonZS/BOSS-Auto-Job-Extension/releases";
+const GITHUB_MAIN_MANIFEST_URL = "https://raw.githubusercontent.com/DamonZS/BOSS-Auto-Job-Extension/main/manifest.json";
+const GITHUB_MAIN_ZIP_URL = "https://github.com/DamonZS/BOSS-Auto-Job-Extension/archive/refs/heads/main.zip";
+
+function compareVersions(left, right) {
+  const leftParts = String(left || "").replace(/^v/i, "").split(/[.-]/).map(part => Number(part) || 0);
+  const rightParts = String(right || "").replace(/^v/i, "").split(/[.-]/).map(part => Number(part) || 0);
+  const length = Math.max(leftParts.length, rightParts.length, 3);
+  for (let index = 0; index < length; index += 1) {
+    const diff = (leftParts[index] || 0) - (rightParts[index] || 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+async function checkGithubUpdate(currentVersion) {
+  let releaseError = "";
+  try {
+    return await checkGithubReleaseUpdate(currentVersion);
+  } catch (error) {
+    releaseError = String(error?.message || error);
+  }
+
+  try {
+    const result = await checkMainManifestUpdate(currentVersion);
+    return {
+      ...result,
+      releaseError
+    };
+  } catch (error) {
+    const mainError = String(error?.message || error);
+    throw new Error(`GitHub Releases 检测失败：${releaseError || "未知错误"}；main 分支检测失败：${mainError}`);
+  }
+}
+
+async function checkGithubReleaseUpdate(currentVersion) {
+  const response = await fetch(GITHUB_LATEST_RELEASE_API, {
+    headers: {
+      "Accept": "application/vnd.github+json"
+    }
+  });
+  const rawText = await response.text();
+  const data = safeJsonParse(rawText);
+  if (!response.ok) {
+    throw new Error(data?.message || `GitHub HTTP ${response.status}: ${responseSnippet(rawText)}`);
+  }
+  const latestVersion = String(data?.tag_name || data?.name || "").replace(/^v/i, "").trim();
+  if (!latestVersion) throw new Error("GitHub Releases 未返回版本号");
+  const releaseUrl = String(data?.html_url || GITHUB_RELEASES_URL);
+  return {
+    currentVersion: String(currentVersion || ""),
+    latestVersion,
+    checkedAt: new Date().toISOString(),
+    hasUpdate: compareVersions(latestVersion, currentVersion) > 0,
+    releaseUrl,
+    source: "release"
+  };
+}
+
+async function checkMainManifestUpdate(currentVersion) {
+  const response = await fetch(GITHUB_MAIN_MANIFEST_URL, {
+    cache: "no-store"
+  });
+  const rawText = await response.text();
+  const data = safeJsonParse(rawText);
+  if (!response.ok) {
+    throw new Error(data?.message || `GitHub main HTTP ${response.status}: ${responseSnippet(rawText)}`);
+  }
+  const latestVersion = String(data?.version || "").replace(/^v/i, "").trim();
+  if (!latestVersion) throw new Error("main 分支 manifest.json 未返回版本号");
+  return {
+    currentVersion: String(currentVersion || ""),
+    latestVersion,
+    checkedAt: new Date().toISOString(),
+    hasUpdate: compareVersions(latestVersion, currentVersion) > 0,
+    releaseUrl: GITHUB_MAIN_ZIP_URL,
+    source: "main"
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "boss-check-update") {
+    (async () => {
+      try {
+        const result = await checkGithubUpdate(message.currentVersion);
+        sendResponse({ ok: true, ...result });
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          error: String(error?.message || error),
+          releaseUrl: GITHUB_RELEASES_URL,
+          checkedAt: new Date().toISOString()
+        });
+      }
+    })();
+    return true;
+  }
+
   if (!message || message.type !== "deepseek-chat") return false;
 
   (async () => {
