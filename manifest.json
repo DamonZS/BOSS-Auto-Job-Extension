@@ -8,6 +8,7 @@
   ],
   "host_permissions": [
     "https://www.zhipin.com/*",
+    "https://api.deepseek.com/*",
     "https://api.toporeduce.cn/*"
   ],
   "background": {

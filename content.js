@@ -49,7 +49,8 @@
       customNegative: [],
       skipRecorded: true,
       jobNature: "",
-      targetKeywords: []
+      targetKeywords: [],
+      region: ""
     },
     safety: {
       dailyScanLimit: 500,
@@ -2285,6 +2286,7 @@
     config.maxJobs = safeNumber(document.querySelector("#baf-max")?.value, config.maxJobs, 1);
     config.filters.jobNature = norm(document.querySelector("#baf-job-nature")?.value || "");
     config.filters.targetKeywords = parseKeywordList(document.querySelector("#baf-target-keywords")?.value || "");
+    config.filters.region = norm(document.querySelector("#baf-region")?.value || "");
     config.filters.salaryMin = norm(document.querySelector("#baf-salary-min")?.value || "");
     config.filters.salaryMax = norm(document.querySelector("#baf-salary-max")?.value || "");
     config.filters.customPositive = parseKeywordList(document.querySelector("#baf-positive")?.value || "");
@@ -2327,6 +2329,7 @@
       filters: {
         jobNature: config.filters.jobNature,
         targetKeywords: [...(config.filters.targetKeywords || [])],
+        region: config.filters.region,
         salaryMin: config.filters.salaryMin,
         salaryMax: config.filters.salaryMax,
         customPositive: [...config.filters.customPositive],
@@ -2498,7 +2501,8 @@
       target: {
         jobNature: jobNatureDisplayValue(config.filters.jobNature) || "不限",
         normalizedNature: nature,
-        directions: targetWords
+        directions: targetWords,
+        region: config.filters.region || ""
       },
       thresholds: {
         favoriteScore: Number(config.threshold || 60),
@@ -2546,6 +2550,7 @@
     return [
       `配置来源：本地预览，点击“生成搜索词”后会由 DeepSeek 重算。`,
       `我要找：${snapshot.target.jobNature} + ${directions}`,
+      `地区：${snapshot.target.region || "不限"}`,
       `必须满足：${strategy.mustHave.join("；")}。`,
       `可以接受：${strategy.acceptable.join("；")}。`,
       `待复核：${(strategy.reviewOnly || []).slice(0, 4).join("；") || "边界岗位人工确认"}。`,
@@ -2606,6 +2611,7 @@
     setPanelValue("#baf-max", config.maxJobs);
     setPanelValue("#baf-job-nature", jobNatureDisplayValue(config.filters.jobNature));
     setPanelValue("#baf-target-keywords", (config.filters.targetKeywords?.length ? config.filters.targetKeywords : DEFAULT_TARGET_KEYWORDS).join("，"));
+    setPanelValue("#baf-region", config.filters.region || "");
     setPanelValue("#baf-salary-min", config.filters.salaryMin);
     setPanelValue("#baf-salary-max", config.filters.salaryMax);
     setPanelValue("#baf-positive", (config.filters.customPositive || []).join("\n"));
@@ -3185,6 +3191,7 @@
     setPanelValue("#baf-max", config.maxJobs);
     setPanelValue("#baf-job-nature", jobNatureDisplayValue(config.filters.jobNature));
     setPanelValue("#baf-target-keywords", (config.filters.targetKeywords?.length ? config.filters.targetKeywords : DEFAULT_TARGET_KEYWORDS).join("，"));
+    setPanelValue("#baf-region", config.filters.region || "");
     setPanelValue("#baf-salary-min", config.filters.salaryMin);
     setPanelValue("#baf-salary-max", config.filters.salaryMax);
     setPanelValue("#baf-keywords", campaignSearchKeywordsText());
@@ -3308,6 +3315,9 @@
           <div class="baf-grid">
             <label>岗位性质<input id="baf-job-nature" class="baf-full-input" value="${escapeAttr(jobNatureDisplayValue(config.filters.jobNature))}" placeholder="销售 / 运营 / 客户成功 / 产品" /></label>
             <label>目标方向<input id="baf-target-keywords" class="baf-full-input" value="${escapeAttr((config.filters.targetKeywords?.length ? config.filters.targetKeywords : DEFAULT_TARGET_KEYWORDS).join("，"))}" placeholder="AI客服 / 跨境电商 / 教育SaaS" /></label>
+          </div>
+          <div class="baf-field">
+            <label>地区<input id="baf-region" class="baf-full-input" value="${escapeAttr(config.filters.region || "")}" placeholder="深圳 / 上海 / 北京 / 不限" /></label>
           </div>
           <div class="baf-salary-row">
             <label>薪资<input id="baf-salary-min" placeholder="最低" /></label>
@@ -4822,6 +4832,7 @@
     return [
       `配置来源：DeepSeek 已生成，已做目标方向冲突清洗。`,
       `我要找：${strategy.target.jobNature} + ${directions}`,
+      `地区：${strategy.target.region || config.filters.region || "不限"}`,
       `必须满足：${strategy.mustHave.join("；")}。`,
       `可以接受：${strategy.acceptable.join("；")}。`,
       `待复核：${(strategy.reviewOnly || []).slice(0, 4).join("；") || "边界岗位人工确认"}。`,
