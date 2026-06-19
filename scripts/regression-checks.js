@@ -304,12 +304,15 @@ assertIncludes(releaseWorkflowSource, "branches:", "release workflow should run 
 assertIncludes(releaseWorkflowSource, "- main", "release workflow should include the main branch");
 assertIncludes(releaseWorkflowSource, "v*.*.*", "release workflow should run on version tags");
 assertIncludes(releaseWorkflowSource, "workflow_dispatch", "release workflow should support manual runs");
-assertIncludes(releaseWorkflowSource, "should_release", "release workflow should separate artifacts from formal releases");
+assertIncludes(releaseWorkflowSource, "TAG=\"v${VERSION}\"", "main branch pushes should publish a release tag from manifest version");
 assertIncludes(releaseWorkflowSource, "node --check background.js", "release workflow should validate background.js");
 assertIncludes(releaseWorkflowSource, "node --check content.js", "release workflow should validate content.js");
 assertIncludes(releaseWorkflowSource, "node scripts/regression-checks.js", "release workflow should run regression checks");
 assertIncludes(releaseWorkflowSource, "softprops/action-gh-release", "release workflow should create GitHub Releases");
-assertIncludes(releaseWorkflowSource, "if: steps.meta.outputs.should_release == 'true'", "release workflow should only create releases for tags or tagged manual runs");
+if (releaseWorkflowSource.includes("if: steps.meta.outputs.should_release")) {
+  failures.push("main branch pushes should create or update GitHub Releases, not only workflow artifacts");
+}
+assertIncludes(releaseWorkflowSource, "fail_on_unmatched_files: true", "release workflow should fail if the zip asset is missing");
 assertIncludes(releaseWorkflowSource, "BOSS-Auto-Job-Extension-v${VERSION}.zip", "release workflow should package versioned zip");
 assertIncludes(source, "如果当前 input 里没有某个岗位性质或目标方向，就不要擅自生成该方向的岗位名称", "search keyword prompt should forbid inventing unselected directions");
 assertIncludes(source, "不要输出 analysis 字段", "search keyword prompt should forbid exposing reasoning fields");
