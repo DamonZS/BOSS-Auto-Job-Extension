@@ -3281,194 +3281,271 @@
     panel.innerHTML = `
       <div class="baf-title">
         <div class="baf-title-main">
-          <strong>BOSS-Auto-Job-Extension <span class="baf-version">v2.0.6</span></strong>
-          <span>职位列表</span>
+          <div class="baf-brand-row">
+            <strong>BOSS Auto Console <span class="baf-version">v2.0.6</span></strong>
+            <span class="baf-brand-tag">专业控制台</span>
+          </div>
+          <span>职位列表自动筛选、收藏与复核</span>
         </div>
-        <div id="baf-run-state" class="baf-run-state baf-state-idle" title="灰灯｜未启动">
-          <span class="baf-run-dot" aria-hidden="true"></span>
-          <span id="baf-run-text" class="baf-run-text">灰灯｜未启动</span>
+        <div class="baf-title-actions">
+          <div id="baf-run-state" class="baf-run-state baf-state-idle" title="灰灯｜未启动">
+            <span class="baf-run-dot" aria-hidden="true"></span>
+            <span id="baf-run-text" class="baf-run-text">灰灯｜未启动</span>
+          </div>
+          <button id="baf-start" class="baf-primary">启动/继续</button>
+          <button id="baf-stop" class="baf-warn">暂停</button>
+          <button id="baf-toggle" type="button">收起</button>
         </div>
-        <button id="baf-toggle" type="button">收起</button>
       </div>
       <div class="baf-status-card">
-        <div id="baf-status" class="baf-status-line">等待进入职位列表</div>
-        <div id="baf-today-progress" class="baf-today-progress"></div>
-        <div class="baf-current-action">
-          <div class="baf-section-title">当前动作</div>
-          <strong id="baf-current-action-text">等待开始扫描</strong>
-          <span id="baf-last-result">最近结果：还没有岗位结果</span>
-          <span id="baf-last-runtime-log">运行日志：还没有启动事件</span>
+        <div class="baf-status-header">
+          <div class="baf-status-overview">
+            <div class="baf-status-chip">
+              <span class="baf-chip-label">面板状态</span>
+              <strong id="baf-status" class="baf-status-line">等待进入职位列表</strong>
+            </div>
+            <div class="baf-status-chip">
+              <span class="baf-chip-label">当前动作</span>
+              <strong id="baf-current-action-text">等待开始扫描</strong>
+            </div>
+          </div>
+          <div class="baf-status-actions">
+            <span id="baf-protection-text">本次 0｜藏 0｜复 0｜今日扫 0/500｜藏 0/80｜招呼 0/20</span>
+            <button id="baf-reset-progress" class="baf-mini-primary" type="button">重置今日</button>
+          </div>
         </div>
-        <div class="baf-protection-row">
-          <span id="baf-protection-text">本次 0｜藏 0｜复 0｜今日扫 0/500｜藏 0/80｜招呼 0/20</span>
-          <button id="baf-reset-progress" class="baf-mini-primary" type="button">重置今日</button>
+        <div id="baf-today-progress" class="baf-today-progress"></div>
+        <div class="baf-status-detail-grid">
+          <div class="baf-console-metric">
+            <span class="baf-chip-label">最近结果</span>
+            <span id="baf-last-result">最近结果：还没有岗位结果</span>
+          </div>
+          <div class="baf-console-metric">
+            <span class="baf-chip-label">运行日志</span>
+            <span id="baf-last-runtime-log">运行日志：还没有启动事件</span>
+          </div>
         </div>
       </div>
       <div class="baf-body">
-        <div class="baf-section baf-primary-section">
-          <div class="baf-section-head">
-            <div>
-              <div class="baf-section-title">我要找什么岗位</div>
-              <div class="baf-hint">先卡岗位性质，再卡目标方向。两者都过了才会考虑收藏。</div>
+        <div class="baf-console-grid">
+          <div class="baf-console-main">
+            <div class="baf-section baf-primary-section">
+              <div class="baf-section-head">
+                <div>
+                  <div class="baf-section-title">任务配置</div>
+                  <div class="baf-hint">先定岗位性质和目标方向，再生成更干净的搜索词。</div>
+                </div>
+                <button id="baf-generate-profile" type="button" class="baf-mini-primary">生成搜索词</button>
+              </div>
+              <div class="baf-grid">
+                <label>岗位性质<input id="baf-job-nature" class="baf-full-input" value="${escapeAttr(jobNatureDisplayValue(config.filters.jobNature))}" placeholder="销售 / 运营 / 客户成功 / 产品" /></label>
+                <label>目标方向<input id="baf-target-keywords" class="baf-full-input" value="${escapeAttr((config.filters.targetKeywords?.length ? config.filters.targetKeywords : DEFAULT_TARGET_KEYWORDS).join("，"))}" placeholder="AI客服 / 跨境电商 / 教育SaaS" /></label>
+              </div>
+              <div class="baf-grid baf-grid-compact">
+                <label class="baf-region-field">地区<input id="baf-region" class="baf-full-input" value="${escapeAttr(config.filters.region || "")}" placeholder="深圳 / 上海 / 北京 / 不限" /></label>
+                <div class="baf-inline-card baf-salary-card">
+                  <div class="baf-inline-card-title">薪资</div>
+                  <div class="baf-salary-row">
+                    <input id="baf-salary-min" placeholder="最低" />
+                    <span>-</span>
+                    <input id="baf-salary-max" placeholder="最高" />
+                    <span>K</span>
+                    <label><input id="baf-skip-recorded" type="checkbox" checked />跳过已扫</label>
+                  </div>
+                </div>
+              </div>
+              <div class="baf-hint baf-block-hint">目标方向尽量写到行业、产品或场景。只写“互联网”“软件”会很宽。</div>
+              <details class="baf-config-preview">
+                <summary>配置摘要 / 规则预览</summary>
+                <pre id="baf-config-summary"></pre>
+                <div class="baf-field baf-preview-actions">
+                  <button id="baf-copy-config" type="button" class="baf-muted">复制配置</button>
+                  <span class="baf-hint">网页端与智能体会读取这份配置。</span>
+                </div>
+              </details>
             </div>
-            <button id="baf-generate-profile" type="button" class="baf-mini-primary">生成搜索词</button>
-          </div>
-          <div class="baf-grid">
-            <label>岗位性质<input id="baf-job-nature" class="baf-full-input" value="${escapeAttr(jobNatureDisplayValue(config.filters.jobNature))}" placeholder="销售 / 运营 / 客户成功 / 产品" /></label>
-            <label>目标方向<input id="baf-target-keywords" class="baf-full-input" value="${escapeAttr((config.filters.targetKeywords?.length ? config.filters.targetKeywords : DEFAULT_TARGET_KEYWORDS).join("，"))}" placeholder="AI客服 / 跨境电商 / 教育SaaS" /></label>
-          </div>
-          <div class="baf-field">
-            <label>地区<input id="baf-region" class="baf-full-input" value="${escapeAttr(config.filters.region || "")}" placeholder="深圳 / 上海 / 北京 / 不限" /></label>
-          </div>
-          <div class="baf-salary-row">
-            <label>薪资<input id="baf-salary-min" placeholder="最低" /></label>
-            <span>-</span>
-            <input id="baf-salary-max" placeholder="最高" />
-            <span>K</span>
-            <label><input id="baf-skip-recorded" type="checkbox" checked />跳过已扫</label>
-          </div>
-          <div class="baf-hint baf-block-hint">目标方向尽量写到行业、产品或场景。只写“互联网”“软件”会很宽。</div>
-          <details class="baf-config-preview">
-            <summary>配置摘要 / 规则预览</summary>
-            <pre id="baf-config-summary"></pre>
-            <div class="baf-field baf-preview-actions">
-              <button id="baf-copy-config" type="button" class="baf-muted">复制配置</button>
-              <span class="baf-hint">后续网页端和智能体会读取这份配置。</span>
+
+            <div class="baf-section">
+              <div class="baf-section-head">
+                <div>
+                  <div class="baf-section-title">搜索与扫描</div>
+                  <div class="baf-hint">支持当前列表直扫，也支持多关键词连续扫描。</div>
+                </div>
+              </div>
+              <div class="baf-segments" role="group" aria-label="扫描模式">
+                <button id="baf-mode-current" type="button" class="baf-segment active">当前列表</button>
+                <button id="baf-mode-task" type="button" class="baf-segment">多关键词</button>
+              </div>
+              <label class="baf-keywords-label">搜索词</label>
+              <textarea id="baf-keywords" placeholder="每行一个关键词，也可以用逗号隔开，如：AI客服销售, 跨境电商运营, SaaS客户成功">${currentSearchKeyword()}</textarea>
+              <div id="baf-keyword-note" class="baf-note"></div>
+              <div class="baf-field">
+                <label><input id="baf-include-blank" type="checkbox" checked />最后扫推荐流</label>
+                <label><input id="baf-expand-keywords" type="checkbox" checked />自动扩展关键词</label>
+                <label>每词</label>
+                <input id="baf-per-keyword" value="${DEFAULT_PER_KEYWORD_MAX}" />
+              </div>
+              <div class="baf-hint baf-block-hint">多关键词模式会自动切换搜索词；当前列表模式只扫当前页面。</div>
             </div>
-          </details>
-        </div>
 
-        <div class="baf-section">
-          <div class="baf-section-title">怎么扫</div>
-          <div class="baf-segments" role="group" aria-label="扫描模式">
-            <button id="baf-mode-current" type="button" class="baf-segment active">当前列表</button>
-            <button id="baf-mode-task" type="button" class="baf-segment">多关键词</button>
-          </div>
-          <div class="baf-hint baf-block-hint">搜索词在上面生成；这里负责选择扫描方式和手动删改搜索词。</div>
-          <label class="baf-keywords-label">搜索词</label>
-          <textarea id="baf-keywords" placeholder="每行一个关键词，也可以用逗号隔开，如：AI客服销售, 跨境电商运营, SaaS客户成功">${currentSearchKeyword()}</textarea>
-          <div id="baf-keyword-note" class="baf-note"></div>
-          <div class="baf-hint baf-block-hint">多关键词模式才会自动切换搜索词；当前列表模式只扫当前页面。</div>
-          <div class="baf-field">
-            <label><input id="baf-include-blank" type="checkbox" checked />最后扫推荐流</label>
-            <label><input id="baf-expand-keywords" type="checkbox" checked />自动扩展关键词</label>
-            <label>每词</label>
-            <input id="baf-per-keyword" value="${DEFAULT_PER_KEYWORD_MAX}" />
-          </div>
-        </div>
-
-        <div class="baf-section baf-threshold-section">
-          <div class="baf-threshold-row">
-            <span class="baf-section-title baf-inline-title">收藏标准</span>
-            <div class="baf-segments baf-threshold-segments" role="group" aria-label="收藏标准">
-              <button type="button" class="baf-threshold-mode" data-threshold="55">宽松</button>
-              <button type="button" class="baf-threshold-mode active" data-threshold="60">标准</button>
-              <button type="button" class="baf-threshold-mode" data-threshold="70">严格</button>
-            </div>
-            <label class="baf-score-inline">收藏分<input id="baf-threshold" value="${config.threshold}" /></label>
-          </div>
-        </div>
-
-        <div class="baf-section baf-failures">
-          <div class="baf-section-head baf-compact-head">
-            <div class="baf-section-title">最近收藏失败</div>
-            <strong id="baf-failure-count">0 条</strong>
-          </div>
-          <div class="baf-field">
-            <button id="baf-copy-failures" type="button" class="baf-mini-primary">复制最近失败</button>
-            <button id="baf-open-failure" type="button" class="baf-mini-primary">打开最近失败</button>
-            <button id="baf-back-search" type="button" class="baf-mini-primary">回失败搜索</button>
-          </div>
-          <div id="baf-recent-export" class="baf-hint">最近导出：还没有复制操作</div>
-        </div>
-
-          <div class="baf-section baf-local-ai">
-          <label><input id="baf-local-ai-info" type="checkbox" checked />LLM 判断岗位详情</label>
-          <div class="baf-hint">默认开启。保存 API Key 后，扫描时会先确认岗位详情，再调用 AI 给出最终判断；没有 Key 时不能启动扫描。</div>
-        </div>
-
-        <div class="baf-section baf-greeting">
-          <div class="baf-section-title">自动打招呼</div>
-          <div class="baf-hint">默认关闭；开启后只在收藏成功后尝试。</div>
-          <div class="baf-field">
-            <label><input id="baf-auto-greet" type="checkbox" />开启自动打招呼</label>
-            <label>最低分 <input id="baf-greet-min-score" value="${config.greeting.minScore || config.threshold}" /> 分</label>
-            <label>今日最多 <input id="baf-greet-limit" value="${config.greeting.dailyLimit}" /> 次</label>
-          </div>
-          <textarea id="baf-greet-template">${escapeHtml(config.greeting.template)}</textarea>
-          <div class="baf-hint">只对已收藏且达到最低分的岗位发送编辑好的内容；找不到同一聊天窗口的发送按钮会记录失败，不跨窗口误点。</div>
-        </div>
-
-        <details class="baf-section baf-advanced">
-          <summary>高级规则 / AI Key</summary>
-          <div class="baf-ai-box">
-            <div class="baf-section-title">AI 生成（OpenAI 兼容）</div>
-            <div class="baf-field baf-ai-row">
-              <label>API 地址</label>
-              <a class="baf-link" href="https://api.toporeduce.cn" target="_blank" rel="noreferrer">https://api.toporeduce.cn</a>
-              <label>API Key</label>
-              <input id="baf-ai-key" class="baf-ai-key" type="password" placeholder="sk-..." />
-            </div>
-            <div class="baf-field baf-ai-row">
-              <label>模型</label>
-              <input id="baf-ai-model" class="baf-ai-model" value="${escapeAttr(state.aiSettings.model || "deepseek-v4-flash")}" />
-              <button id="baf-show-key" type="button" class="baf-mini-primary">显示 Key</button>
-              <button id="baf-save-key" type="button" class="baf-mini-primary">保存 Key</button>
-              <button id="baf-clear-ai-key" type="button" class="baf-muted">清除 Key</button>
-              <span id="baf-ai-key-state" class="baf-ai-key-state">${state.aiSettings.hasKey ? "已保存" : "未保存"}</span>
-            </div>
-            <div class="baf-hint">API 地址固定；Key 保存在扩展私有存储中，AI 请求由后台脚本读取 Key 并添加 Authorization。</div>
-          </div>
-          <div class="baf-field">
-            <label>当前列表最多扫</label>
-            <input id="baf-max" value="${config.maxJobs}" />
-            <label>今日最多扫</label>
-            <input id="baf-daily-scan-limit" value="${config.safety.dailyScanLimit}" />
-            <label>今日最多藏</label>
-            <input id="baf-daily-favorite-limit" value="${config.safety.dailyFavoriteLimit}" />
-          </div>
-          <div class="baf-field">
-            <label>每扫</label>
-            <input id="baf-pause-every" value="${config.safety.pauseEvery}" />
-            <span>个休息</span>
-            <input id="baf-pause-min" value="${config.safety.pauseMinSec}" />
-            <span>-</span>
-            <input id="baf-pause-max" value="${config.safety.pauseMaxSec}" />
-            <span>秒</span>
-          </div>
-          <div class="baf-field">
-            <button id="baf-generate-rules" type="button" class="baf-muted">生成加分词/排除词</button>
-            <span class="baf-hint">先优化搜索词，再生成少量加分词和排除词。</span>
-          </div>
-          <div class="baf-textareas">
-            <label>正向词<textarea id="baf-positive" placeholder="每行一个，如：AI客服&#10;客户成功&#10;Agent"></textarea></label>
-            <label>反向词<textarea id="baf-negative" placeholder="每行一个，如：保险&#10;贷款&#10;营业员&#10;招生&#10;课程销售"></textarea></label>
-          </div>
-          <div id="baf-rules-note" class="baf-note"></div>
-        </details>
-
-        <div class="baf-section baf-recent">
-          <div class="baf-section-head baf-compact-head">
-            <div class="baf-section-title">最近判断</div>
-            <div class="baf-log-tabs">
-              <button type="button" data-filter="all" class="active">全部</button>
-              <button type="button" data-filter="favorite">已收藏</button>
-              <button type="button" data-filter="favorite_failed">收藏失败</button>
-              <button type="button" data-filter="review">待复核</button>
-              <button type="button" data-filter="exclude">已排除</button>
+            <div class="baf-section baf-advanced-console">
+              <div class="baf-section-head">
+                <div>
+                  <div class="baf-section-title">规则与 AI</div>
+                  <div class="baf-hint">收藏阈值、AI 配置、规则词和安全限制统一管理。</div>
+                </div>
+              </div>
+              <div class="baf-threshold-row">
+                <span class="baf-section-title baf-inline-title">收藏标准</span>
+                <div class="baf-segments baf-threshold-segments" role="group" aria-label="收藏标准">
+                  <button type="button" class="baf-threshold-mode" data-threshold="55">宽松</button>
+                  <button type="button" class="baf-threshold-mode active" data-threshold="60">标准</button>
+                  <button type="button" class="baf-threshold-mode" data-threshold="70">严格</button>
+                </div>
+                <label class="baf-score-inline">收藏分<input id="baf-threshold" value="${config.threshold}" /></label>
+              </div>
+              <div class="baf-console-subgrid">
+                <div class="baf-console-card baf-local-ai">
+                  <div class="baf-inline-card-title">AI 判断</div>
+                  <label><input id="baf-local-ai-info" type="checkbox" checked />LLM 判断岗位详情</label>
+                  <div class="baf-hint">保存 Key 后才可启动扫描，详情确认与最终判断都会走 AI。</div>
+                </div>
+                <div class="baf-console-card baf-greeting">
+                  <div class="baf-inline-card-title">自动打招呼</div>
+                  <div class="baf-field">
+                    <label><input id="baf-auto-greet" type="checkbox" />开启自动打招呼</label>
+                    <label>最低分 <input id="baf-greet-min-score" value="${config.greeting.minScore || config.threshold}" /> 分</label>
+                    <label>今日最多 <input id="baf-greet-limit" value="${config.greeting.dailyLimit}" /> 次</label>
+                  </div>
+                  <textarea id="baf-greet-template">${escapeHtml(config.greeting.template)}</textarea>
+                </div>
+              </div>
             </div>
           </div>
-          <div id="baf-log"></div>
-        </div>
-        <div class="baf-section baf-boundary">
-          <div class="baf-section-title">使用边界</div>
-          <div class="baf-hint">只做岗位粗筛、收藏、记录和复核；默认不自动打招呼，开启后仅对已收藏且达标岗位发送编辑好的招呼内容；不自动投递、不读取聊天。遇到验证、登录异常或账号提示，立即停止。</div>
+
+          <div class="baf-console-side">
+            <div class="baf-section baf-runtime-panel">
+              <div class="baf-section-head baf-compact-head">
+                <div>
+                  <div class="baf-section-title">运行状态</div>
+                  <div class="baf-hint">这里汇总模式、关键词进度与异常提醒。</div>
+                </div>
+              </div>
+              <div class="baf-runtime-stack">
+                <div class="baf-runtime-item">
+                  <span class="baf-chip-label">当前模式</span>
+                  <strong id="baf-runtime-mode-text">按当前配置待命</strong>
+                </div>
+                <div class="baf-runtime-item">
+                  <span class="baf-chip-label">关键词进度</span>
+                  <strong id="baf-runtime-keyword-text">等待搜索词</strong>
+                </div>
+                <div class="baf-runtime-item">
+                  <span class="baf-chip-label">异常提醒</span>
+                  <strong id="baf-runtime-alert-text">暂无异常</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="baf-section baf-failures">
+              <div class="baf-section-head baf-compact-head">
+                <div class="baf-section-title">最近收藏失败</div>
+                <strong id="baf-failure-count">0 条</strong>
+              </div>
+              <div class="baf-field">
+                <button id="baf-copy-failures" type="button" class="baf-mini-primary">复制最近失败</button>
+                <button id="baf-open-failure" type="button" class="baf-mini-primary">打开最近失败</button>
+                <button id="baf-back-search" type="button" class="baf-mini-primary">回失败搜索</button>
+              </div>
+              <div id="baf-recent-export" class="baf-hint">最近导出：还没有复制操作</div>
+            </div>
+
+            <div class="baf-section baf-recent">
+              <div class="baf-section-head baf-compact-head">
+                <div class="baf-section-title baf-recent-title">最近判断</div>
+                <div class="baf-log-tabs">
+                  <button type="button" data-filter="all" class="active">全部</button>
+                  <button type="button" data-filter="favorite">已收藏</button>
+                  <button type="button" data-filter="favorite_failed">收藏失败</button>
+                  <button type="button" data-filter="review">待复核</button>
+                  <button type="button" data-filter="exclude">已排除</button>
+                </div>
+              </div>
+              <div id="baf-log"></div>
+            </div>
+
+            <div class="baf-section baf-boundary">
+              <div class="baf-section-title">使用边界</div>
+              <div class="baf-hint">只做岗位粗筛、收藏、记录和复核；默认不自动打招呼，开启后仅对已收藏且达标岗位发送编辑好的招呼内容；不自动投递、不读取聊天。遇到验证、登录异常或账号提示，立即停止。</div>
+            </div>
+          </div>
+
+          <div class="baf-section baf-advanced baf-advanced-wide">
+            <div class="baf-section-head baf-compact-head">
+              <div>
+                <div class="baf-section-title">高级规则 / AI Key</div>
+                <div class="baf-hint">AI Key、安全限制、规则词全部展开展示。</div>
+              </div>
+              <button id="baf-generate-rules" type="button" class="baf-muted">生成加分词/排除词</button>
+            </div>
+            <div class="baf-advanced-grid">
+              <div class="baf-advanced-block baf-ai-box">
+                <div class="baf-inline-card-title">AI 生成（OpenAI 兼容）</div>
+                <div class="baf-field baf-ai-row">
+                  <label>API 地址</label>
+                  <a class="baf-link" href="https://api.toporeduce.cn" target="_blank" rel="noreferrer">https://api.toporeduce.cn</a>
+                </div>
+                <div class="baf-field baf-ai-row">
+                  <label>API Key</label>
+                  <input id="baf-ai-key" class="baf-ai-key" type="password" placeholder="sk-..." />
+                </div>
+                <div class="baf-field baf-ai-row">
+                  <label>模型</label>
+                  <input id="baf-ai-model" class="baf-ai-model" value="${escapeAttr(state.aiSettings.model || "deepseek-v4-flash")}" />
+                  <button id="baf-show-key" type="button" class="baf-mini-primary">显示 Key</button>
+                  <button id="baf-save-key" type="button" class="baf-mini-primary">保存 Key</button>
+                  <button id="baf-clear-ai-key" type="button" class="baf-muted">清除 Key</button>
+                  <span id="baf-ai-key-state" class="baf-ai-key-state">${state.aiSettings.hasKey ? "已保存" : "未保存"}</span>
+                </div>
+                <div class="baf-hint">Key 保存在扩展私有存储中，AI 请求由后台脚本读取并添加 Authorization。</div>
+              </div>
+              <div class="baf-advanced-block">
+                <div class="baf-inline-card-title">安全限制</div>
+                <div class="baf-field">
+                  <label>当前列表最多扫</label>
+                  <input id="baf-max" value="${config.maxJobs}" />
+                  <label>今日最多扫</label>
+                  <input id="baf-daily-scan-limit" value="${config.safety.dailyScanLimit}" />
+                  <label>今日最多藏</label>
+                  <input id="baf-daily-favorite-limit" value="${config.safety.dailyFavoriteLimit}" />
+                </div>
+                <div class="baf-field">
+                  <label>每扫</label>
+                  <input id="baf-pause-every" value="${config.safety.pauseEvery}" />
+                  <span>个休息</span>
+                  <input id="baf-pause-min" value="${config.safety.pauseMinSec}" />
+                  <span>-</span>
+                  <input id="baf-pause-max" value="${config.safety.pauseMaxSec}" />
+                  <span>秒</span>
+                </div>
+                <div class="baf-hint">先优化搜索词，再生成少量加分词和排除词。</div>
+              </div>
+              <div class="baf-advanced-block baf-rule-words">
+                <div class="baf-inline-card-title">规则词</div>
+                <div class="baf-textareas">
+                  <label>正向词<textarea id="baf-positive" placeholder="每行一个，如：AI客服&#10;客户成功&#10;Agent"></textarea></label>
+                  <label>反向词<textarea id="baf-negative" placeholder="每行一个，如：保险&#10;贷款&#10;营业员&#10;招生&#10;课程销售"></textarea></label>
+                </div>
+                <div id="baf-rules-note" class="baf-note"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="baf-actions">
-        <button id="baf-start" class="baf-secondary">启动/继续</button>
-        <button id="baf-stop" class="baf-warn">暂停</button>
-        <button id="baf-table" class="baf-blue">复制表格</button>
+        <div class="baf-actions-primary">
+          <button id="baf-table" class="baf-blue">复制表格</button>
+        </div>
         <details class="baf-more-actions">
           <summary>更多导出与维护</summary>
           <div class="baf-more-grid">
@@ -3508,25 +3585,25 @@
     style.textContent = `
       #boss-ai-autofav-panel {
         position: fixed;
-        right: max(8px, env(safe-area-inset-right));
-        bottom: max(8px, env(safe-area-inset-bottom));
-        width: min(520px, calc(100vw - 16px));
-        max-width: calc(100vw - 16px);
-        max-height: min(84vh, calc(100vh - 16px));
+        right: max(10px, env(safe-area-inset-right));
+        bottom: max(10px, env(safe-area-inset-bottom));
+        width: min(790px, calc(100vw - 20px));
+        max-width: calc(100vw - 20px);
+        max-height: min(88vh, calc(100vh - 20px));
         box-sizing: border-box;
         z-index: 2147483647;
-        background: #ffffff;
-        color: #111827;
-        border: 1px solid #d8dee8;
-        border-radius: 12px;
-        box-shadow: 0 18px 48px rgba(15, 23, 42, .18);
+        background: #f4f7fb;
+        color: #0f172a;
+        border: 1px solid #d4dbe7;
+        border-radius: 14px;
+        box-shadow: 0 24px 64px rgba(15, 23, 42, .22);
         font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         overflow: hidden;
         display: flex;
         flex-direction: column;
       }
       #boss-ai-autofav-panel.baf-collapsed {
-        width: min(390px, calc(100vw - 16px));
+        width: min(520px, calc(100vw - 20px));
         max-height: none;
       }
       #boss-ai-autofav-panel *,
@@ -3541,44 +3618,78 @@
       }
       #boss-ai-autofav-panel.baf-collapsed .baf-status-card {
         display: block;
-        max-height: 132px;
+        max-height: 186px;
         border-bottom: 0;
       }
       #boss-ai-autofav-panel .baf-title {
-        padding: 10px 12px;
-        background: #0f766e;
-        color: #ffffff;
+        padding: 14px 16px;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #0b1120 100%);
+        color: #f8fafc;
         cursor: move;
         user-select: none;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 12px;
+        gap: 16px;
+        border-bottom: 1px solid rgba(148, 163, 184, .18);
       }
       #boss-ai-autofav-panel .baf-title-main {
         display: flex;
         flex-direction: column;
-        gap: 1px;
+        gap: 5px;
+        min-width: 0;
+      }
+      #boss-ai-autofav-panel .baf-brand-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
         min-width: 0;
       }
       #boss-ai-autofav-panel .baf-title-main strong {
-        font-size: 14px;
-        line-height: 1.2;
+        font-size: 16px;
+        line-height: 1.1;
+        color: #f8fafc;
+      }
+      #boss-ai-autofav-panel .baf-brand-tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: rgba(20, 184, 166, .18);
+        border: 1px solid rgba(45, 212, 191, .32);
+        color: #99f6e4 !important;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      #boss-ai-autofav-panel .baf-title span {
+        color: #cbd5e1;
+        font-weight: 500;
+        font-size: 12px;
+      }
+      #boss-ai-autofav-panel .baf-version {
+        font-size: 12px;
+        font-weight: 600;
+        margin-left: 4px;
+        opacity: .9;
+      }
+      #boss-ai-autofav-panel .baf-title-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
       }
       #boss-ai-autofav-panel .baf-run-state {
-        flex: 1 1 auto;
-        min-width: 138px;
-        max-width: 190px;
-        justify-self: center;
+        min-width: 144px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 7px;
-        padding: 6px 10px;
+        gap: 8px;
+        padding: 8px 12px;
         border-radius: 999px;
-        border: 1px solid rgba(255,255,255,.32);
-        background: rgba(255,255,255,.12);
-        color: #ffffff;
+        border: 1px solid rgba(148, 163, 184, .32);
+        background: rgba(255,255,255,.06);
+        color: #f8fafc;
         font-size: 12px;
         font-weight: 800;
         line-height: 1;
@@ -3649,61 +3760,66 @@
         font-weight: 800;
         cursor: pointer;
       }
-      #boss-ai-autofav-panel .baf-version {
-        font-size: 12px;
-        font-weight: 600;
-        margin-left: 4px;
-        opacity: .92;
-      }
-      #boss-ai-autofav-panel .baf-title span {
-        color: #ccfbf1;
-        font-weight: 500;
-        font-size: 12px;
-      }
       #boss-ai-autofav-panel #baf-toggle {
         flex: 0 0 auto;
-        padding: 4px 8px;
+        padding: 8px 10px;
         border-radius: 999px;
-        border: 1px solid rgba(255,255,255,.45);
-        background: rgba(255,255,255,.12);
-        color: #ffffff;
+        border: 1px solid rgba(148, 163, 184, .32);
+        background: rgba(255,255,255,.08);
+        color: #f8fafc;
         font-size: 12px;
         font-weight: 700;
         cursor: pointer;
       }
       #boss-ai-autofav-panel .baf-actions {
-        display: flex;
-        gap: 7px;
-        align-items: center;
-        min-width: 0;
-      }
-      #boss-ai-autofav-panel .baf-actions {
         flex: 0 0 auto;
-        padding: 9px 10px;
-        border-top: 1px solid #e5e7eb;
-        background: #f8fafc;
+        padding: 12px 14px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid #d9e2ef;
+        background: #eef3f9;
         flex-wrap: wrap;
-        box-shadow: 0 -8px 22px rgba(15, 23, 42, .06);
+        box-shadow: 0 -10px 24px rgba(15, 23, 42, .05);
+      }
+      #boss-ai-autofav-panel .baf-actions-primary {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
       #boss-ai-autofav-panel .baf-body {
-        padding: 10px;
+        padding: 12px;
         overflow: auto;
         flex: 1 1 auto;
         min-height: 160px;
         overscroll-behavior: contain;
-        background: #f8fafc;
+        background: #f4f7fb;
+      }
+      #boss-ai-autofav-panel .baf-console-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(286px, .94fr);
+        gap: 12px;
+        align-items: start;
+      }
+      #boss-ai-autofav-panel .baf-console-main,
+      #boss-ai-autofav-panel .baf-console-side {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
       }
       #boss-ai-autofav-panel .baf-section {
         padding: 10px;
-        margin-bottom: 9px;
+        margin-bottom: 0;
         background: #ffffff;
-        border: 1px solid #e5e7eb;
+        border: 1px solid #dde5f0;
         border-radius: 10px;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, .04);
       }
       #boss-ai-autofav-panel .baf-section-title {
         font-weight: 700;
-        color: #0f766e;
-        margin-bottom: 8px;
+        color: #0f172a;
+        margin-bottom: 6px;
         font-size: 13px;
       }
       #boss-ai-autofav-panel .baf-link {
@@ -3714,33 +3830,40 @@
       #boss-ai-autofav-panel .baf-section-head {
         display: flex;
         justify-content: space-between;
-        gap: 10px;
+        gap: 8px;
         align-items: flex-start;
-        margin-bottom: 9px;
+        margin-bottom: 7px;
+      }
+      #boss-ai-autofav-panel .baf-section-head > div:first-child {
+        min-width: 0;
       }
       #boss-ai-autofav-panel .baf-primary-section {
-        border-color: #99f6e4;
-        box-shadow: 0 0 0 1px rgba(20, 184, 166, .08);
+        border-color: #c8d7ec;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
       }
       #boss-ai-autofav-panel .baf-grid {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+        grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
         gap: 8px;
         align-items: end;
+      }
+      #boss-ai-autofav-panel .baf-grid-compact {
+        grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr);
+        margin-top: 7px;
       }
       #boss-ai-autofav-panel .baf-grid label {
         color: #374151;
         font-weight: 700;
         display: flex;
         flex-direction: column;
-        gap: 5px;
+        gap: 4px;
       }
       #boss-ai-autofav-panel input {
-        width: 58px;
+        width: 56px;
         max-width: 100%;
-        padding: 6px 7px;
-        border-radius: 8px;
-        border: 1px solid #d1d5db;
+        padding: 6px 8px;
+        border-radius: 7px;
+        border: 1px solid #cfd8e3;
         background: #ffffff;
         color: #111827;
         outline: none;
@@ -3760,11 +3883,14 @@
         width: 100%;
         box-sizing: border-box;
       }
+      #boss-ai-autofav-panel .baf-region-field {
+        max-width: 178px;
+      }
       #boss-ai-autofav-panel .baf-field {
         display: flex;
-        gap: 7px;
+        gap: 6px;
         align-items: center;
-        margin-bottom: 7px;
+        margin-bottom: 6px;
         flex-wrap: wrap;
         min-width: 0;
       }
@@ -3775,27 +3901,43 @@
       #boss-ai-autofav-panel .baf-salary-row {
         display: flex;
         align-items: center;
-        gap: 7px;
-        margin: 8px 0 4px;
-        flex-wrap: wrap;
+        gap: 4px;
+        margin: 0;
+        flex-wrap: nowrap;
+        min-width: 0;
       }
       #boss-ai-autofav-panel .baf-salary-row label {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 4px;
         color: #374151;
         font-weight: 700;
       }
       #boss-ai-autofav-panel .baf-salary-row input {
-        width: 64px;
+        width: 46px;
+        padding-left: 6px;
+        padding-right: 6px;
       }
-      #boss-ai-autofav-panel .baf-threshold-section {
-        padding: 8px 10px;
+      #boss-ai-autofav-panel .baf-salary-card {
+        height: auto;
+        min-height: 0;
+        padding: 6px 8px;
+        justify-content: center;
+      }
+      #boss-ai-autofav-panel .baf-salary-card .baf-inline-card-title {
+        margin-bottom: 2px;
+      }
+      #boss-ai-autofav-panel .baf-salary-card label {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        white-space: nowrap;
+        font-size: 12px;
       }
       #boss-ai-autofav-panel .baf-threshold-row {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr) auto;
-        gap: 8px;
+        gap: 6px;
         align-items: center;
       }
       #boss-ai-autofav-panel .baf-inline-title {
@@ -3815,11 +3957,12 @@
         white-space: nowrap;
       }
       #boss-ai-autofav-panel .baf-score-inline input {
-        width: 48px;
+        width: 44px;
       }
       #boss-ai-autofav-panel .baf-hint {
         color: #6b7280;
         font-size: 12px;
+        line-height: 1.5;
       }
       #boss-ai-autofav-panel .baf-note {
         display: none;
@@ -3834,14 +3977,14 @@
       }
       #boss-ai-autofav-panel .baf-config-preview {
         margin-top: 8px;
-        border: 1px solid #dbeafe;
+        border: 1px solid #d7e5f5;
         border-radius: 9px;
-        background: #f8fafc;
+        background: #f8fbff;
       }
       #boss-ai-autofav-panel .baf-config-preview summary {
-        padding: 7px 8px;
+        padding: 8px 10px;
         cursor: pointer;
-        color: #0f766e;
+        color: #0f172a;
         font-weight: 700;
       }
       #boss-ai-autofav-panel .baf-config-preview pre {
@@ -3858,13 +4001,13 @@
       #boss-ai-autofav-panel .baf-ai-box {
         padding-bottom: 8px;
         margin-bottom: 8px;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid #e2e8f0;
       }
       #boss-ai-autofav-panel input.baf-ai-key {
-        width: 185px;
+        width: 220px;
       }
       #boss-ai-autofav-panel input.baf-ai-model {
-        width: 135px;
+        width: 150px;
       }
       #boss-ai-autofav-panel .baf-ai-key-state {
         color: #6b7280;
@@ -3879,29 +4022,26 @@
         color: #b45309;
       }
       #boss-ai-autofav-panel .baf-boundary {
-        background: #f8fafc;
+        background: #fbfcfe;
       }
       #boss-ai-autofav-panel .baf-block-hint {
-        margin: -2px 0 8px;
-      }
-      #boss-ai-autofav-panel .baf-top-gap {
-        margin-top: 9px;
+        margin: -2px 0 6px;
       }
       #boss-ai-autofav-panel .baf-segments {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 6px;
-        margin-bottom: 8px;
+        margin-bottom: 7px;
       }
       #boss-ai-autofav-panel .baf-segments button {
-        background: #eef2f7;
-        color: #475569;
-        border: 1px solid #e2e8f0;
+        background: #f1f5f9;
+        color: #334155;
+        border: 1px solid #dbe5ef;
       }
       #boss-ai-autofav-panel .baf-segments button.active {
-        background: #0f766e;
+        background: #0f172a;
         color: #ffffff;
-        border-color: #0f766e;
+        border-color: #0f172a;
       }
       #boss-ai-autofav-panel .baf-keywords-label {
         display: block;
@@ -3926,9 +4066,9 @@
         margin-top: 4px;
         box-sizing: border-box;
         resize: vertical;
-        padding: 7px 8px;
-        border-radius: 8px;
-        border: 1px solid #d1d5db;
+        padding: 7px 9px;
+        border-radius: 7px;
+        border: 1px solid #cfd8e3;
         background: #ffffff;
         color: #111827;
         font: inherit;
@@ -3940,13 +4080,13 @@
         cursor: not-allowed;
       }
       #boss-ai-autofav-panel #baf-keywords {
-        height: 58px;
-        margin: 5px 0 8px;
+        height: 78px;
+        margin: 4px 0 7px;
       }
       #boss-ai-autofav-panel button {
         padding: 7px 10px;
-        min-height: 32px;
-        border-radius: 8px;
+        min-height: 30px;
+        border-radius: 7px;
         border: 0;
         cursor: pointer;
         background: #e5e7eb;
@@ -3959,8 +4099,8 @@
       #boss-ai-autofav-panel button:hover {
         filter: brightness(.96);
       }
-      #boss-ai-autofav-panel button.baf-primary { background: #0f766e; color: #ffffff; }
-      #boss-ai-autofav-panel button.baf-secondary { background: #e0f2fe; color: #075985; }
+      #boss-ai-autofav-panel button.baf-primary { background: #14b8a6; color: #052e2b; }
+      #boss-ai-autofav-panel button.baf-secondary { background: #0f172a; color: #ffffff; }
       #boss-ai-autofav-panel button.baf-warn { background: #f97316; color: #fff; }
       #boss-ai-autofav-panel button.baf-blue { background: #2563eb; color: #fff; }
       #boss-ai-autofav-panel button.baf-muted { background: #e5e7eb; color: #374151; }
@@ -3970,119 +4110,192 @@
         filter: grayscale(.15);
       }
       #boss-ai-autofav-panel.baf-running #baf-start {
-        background: #14b8a6;
-        color: #ffffff;
-        box-shadow: inset 0 0 0 1px rgba(255,255,255,.24);
+        background: #22c55e;
+        color: #052e16;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
       }
       #boss-ai-autofav-panel.baf-running #baf-stop {
-        background: #0f766e;
+        background: #dc2626;
         color: #ffffff;
       }
       #boss-ai-autofav-panel.baf-paused #baf-start {
-        background: #0f766e;
-        color: #ffffff;
+        background: #facc15;
+        color: #713f12;
       }
       #boss-ai-autofav-panel button.baf-mini-primary {
-        background: #ecfeff;
+        background: #eefdf9;
         color: #0f766e;
-        border: 1px solid #99f6e4;
+        border: 1px solid #bcefe4;
         white-space: nowrap;
       }
       #boss-ai-autofav-panel .baf-status-card {
-        padding: 6px 10px 7px;
+        padding: 12px 14px;
         color: #334155;
-        background: #f0fdfa;
-        border-bottom: 1px solid #ccfbf1;
+        background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+        border-bottom: 1px solid #dbe5f2;
         flex: 0 0 auto;
         overflow: hidden;
-        white-space: pre-line;
+        white-space: normal;
         font-size: 12px;
-        line-height: 1.22;
+        line-height: 1.35;
+      }
+      #boss-ai-autofav-panel .baf-status-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      #boss-ai-autofav-panel .baf-status-overview {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        flex: 1 1 auto;
+      }
+      #boss-ai-autofav-panel .baf-status-chip,
+      #boss-ai-autofav-panel .baf-console-metric,
+      #boss-ai-autofav-panel .baf-runtime-item,
+      #boss-ai-autofav-panel .baf-inline-card {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid #dae5f1;
+        background: rgba(255,255,255,.86);
+      }
+      #boss-ai-autofav-panel .baf-status-chip,
+      #boss-ai-autofav-panel .baf-console-metric,
+      #boss-ai-autofav-panel .baf-runtime-item {
+        padding: 9px;
+      }
+      #boss-ai-autofav-panel .baf-inline-card {
+        justify-content: center;
+        height: 100%;
+      }
+      #boss-ai-autofav-panel .baf-inline-card.baf-salary-card {
+        padding: 6px 8px;
+        border-radius: 8px;
+      }
+      #boss-ai-autofav-panel .baf-inline-card-title,
+      #boss-ai-autofav-panel .baf-chip-label {
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+      }
+      #boss-ai-autofav-panel .baf-status-chip strong,
+      #boss-ai-autofav-panel .baf-runtime-item strong {
+        color: #0f172a;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+      #boss-ai-autofav-panel .baf-status-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-end;
+        min-width: 230px;
+      }
+      #boss-ai-autofav-panel #baf-protection-text {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #0f172a;
+        color: #e2e8f0;
+        font-weight: 700;
       }
       #boss-ai-autofav-panel #baf-today-progress {
         display: none;
       }
       #boss-ai-autofav-panel #baf-status {
-        max-height: 42px;
+        max-height: none;
         overflow: hidden;
       }
-      #boss-ai-autofav-panel .baf-current-action {
+      #boss-ai-autofav-panel .baf-status-detail-grid {
         display: grid;
-        grid-template-columns: 68px minmax(0, 1fr);
-        gap: 3px 8px;
-        margin-top: 5px;
-        padding-top: 5px;
-        border-top: 1px solid #ccfbf1;
-        align-items: baseline;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 10px;
       }
-      #boss-ai-autofav-panel .baf-current-action .baf-section-title {
-        grid-row: span 3;
-        margin: 0;
-      }
-      #boss-ai-autofav-panel .baf-current-action strong {
-        display: block;
-        color: #374151;
-        margin: 0;
-        line-height: 1.2;
-      }
-      #boss-ai-autofav-panel .baf-current-action span {
-        display: block;
-        color: #64748b;
+      #boss-ai-autofav-panel .baf-console-metric span:last-child {
+        color: #334155;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      #boss-ai-autofav-panel .baf-protection-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        margin-top: 6px;
-        padding-top: 6px;
-        border-top: 1px solid #ccfbf1;
-        color: #0f766e;
-        font-weight: 700;
+      #boss-ai-autofav-panel .baf-console-subgrid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 12px;
       }
-      #boss-ai-autofav-panel .baf-protection-row span {
-        min-width: 0;
+      #boss-ai-autofav-panel .baf-console-card {
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        background: #f8fbff;
+      }
+      #boss-ai-autofav-panel .baf-runtime-panel {
+        background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+      }
+      #boss-ai-autofav-panel .baf-runtime-stack {
+        display: grid;
+        gap: 10px;
+      }
+      #boss-ai-autofav-panel .baf-runtime-item strong {
+        word-break: break-word;
+      }
+      #boss-ai-autofav-panel .baf-runtime-item {
+        position: relative;
         overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
       }
-      #boss-ai-autofav-panel .baf-protection-row button {
-        flex: 0 0 auto;
-        padding: 5px 9px;
+      #boss-ai-autofav-panel .baf-runtime-item::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, #14b8a6 0%, #0f766e 100%);
       }
-      #baf-log {
-        padding: 0;
-        max-height: 188px;
-        overflow: auto;
-        background: #ffffff;
-      }
-      #boss-ai-autofav-panel .baf-empty {
-        padding: 10px 4px;
-        color: #64748b;
-        font-size: 12px;
+      #boss-ai-autofav-panel .baf-advanced-console {
+        background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
       }
       #boss-ai-autofav-panel .baf-advanced {
-        padding: 0;
-      }
-      #boss-ai-autofav-panel .baf-advanced summary {
         padding: 10px;
-        cursor: pointer;
-        font-weight: 700;
-        color: #0f766e;
+        margin-top: 0;
+        border: 1px solid #dbe5f1;
+        box-shadow: none;
       }
-      #boss-ai-autofav-panel .baf-advanced[open] {
-        padding: 0 10px 10px;
+      #boss-ai-autofav-panel .baf-advanced-wide {
+        grid-column: 1 / -1;
+        background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
       }
-      #boss-ai-autofav-panel .baf-advanced[open] summary {
-        padding: 10px 0 0;
-        margin-bottom: 8px;
+      #boss-ai-autofav-panel .baf-advanced-grid {
+        display: grid;
+        grid-template-columns: minmax(220px, 1.05fr) minmax(180px, .85fr) minmax(240px, 1.2fr);
+        gap: 10px;
+        align-items: start;
+      }
+      #boss-ai-autofav-panel .baf-advanced-block {
+        min-width: 0;
+        padding: 9px;
+        border: 1px solid #dbe5f1;
+        border-radius: 9px;
+        background: rgba(255,255,255,.72);
+      }
+      #boss-ai-autofav-panel .baf-advanced-wide .baf-textareas {
+        gap: 7px;
+      }
+      #boss-ai-autofav-panel .baf-advanced-wide textarea {
+        height: 58px;
       }
       #boss-ai-autofav-panel .baf-failures {
         border-color: #fecaca;
-        background: #fff7f7;
+        background: linear-gradient(180deg, #fff7f7 0%, #fffdfd 100%);
       }
       #boss-ai-autofav-panel .baf-failures .baf-section-title,
       #boss-ai-autofav-panel #baf-failure-count {
@@ -4090,7 +4303,7 @@
       }
       #boss-ai-autofav-panel .baf-local-ai,
       #boss-ai-autofav-panel .baf-greeting {
-        background: #f8fafc;
+        background: #f8fbff;
       }
       #boss-ai-autofav-panel .baf-local-ai label,
       #boss-ai-autofav-panel .baf-greeting label {
@@ -4098,46 +4311,62 @@
         color: #334155;
       }
       #boss-ai-autofav-panel #baf-greet-template {
-        height: 62px;
+        height: 76px;
       }
       #boss-ai-autofav-panel .baf-compact-head {
         align-items: center;
-        margin-bottom: 7px;
+        margin-bottom: 6px;
       }
       #boss-ai-autofav-panel .baf-log-tabs {
         display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
+        gap: 4px;
+        flex-wrap: nowrap;
         justify-content: flex-end;
+        min-width: 0;
       }
       #boss-ai-autofav-panel .baf-log-tabs button {
-        padding: 5px 8px;
-        border: 1px solid #99f6e4;
-        background: #ecfdf5;
-        color: #0f766e;
+        padding: 4px 6px;
+        border: 1px solid #d9e4ef;
+        background: #f8fafc;
+        color: #334155;
+        min-height: 28px;
+        font-size: 11px;
+      }
+      #boss-ai-autofav-panel .baf-recent .baf-section-head {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: 6px;
+      }
+      #boss-ai-autofav-panel .baf-recent-title {
+        flex: 0 0 auto;
+        width: 48px;
+        margin-bottom: 0;
+        line-height: 1.2;
       }
       #boss-ai-autofav-panel .baf-log-tabs button.active {
-        background: #0f766e;
+        background: #0f172a;
         color: #ffffff;
       }
       #boss-ai-autofav-panel .baf-more-actions {
+        flex: 1 1 100%;
         width: 100%;
         padding: 0;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
+        border: 1px solid #d9e2ef;
+        border-radius: 10px;
         background: #ffffff;
       }
       #boss-ai-autofav-panel .baf-more-actions summary {
-        padding: 8px 10px;
+        padding: 10px 12px;
         cursor: pointer;
         color: #334155;
         font-weight: 700;
       }
       #boss-ai-autofav-panel .baf-more-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-        gap: 7px;
-        padding: 0 8px 8px;
+        grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+        gap: 8px;
+        padding: 0 10px 10px;
       }
       #boss-ai-autofav-panel .baf-ai-row {
         align-items: center;
@@ -4145,7 +4374,7 @@
       #boss-ai-autofav-panel .baf-feedback {
         display: none;
         flex: 0 0 auto;
-        padding: 9px 10px;
+        padding: 11px 14px;
         border-bottom: 1px solid #e5e7eb;
         background: #fffbeb;
       }
@@ -4164,7 +4393,18 @@
       }
       #boss-ai-autofav-panel .baf-feedback button#baf-apply-feedback {
         background: #2563eb;
-        color: #fff;
+        color: #ffffff;
+      }
+      #baf-log {
+        padding: 0;
+        max-height: 300px;
+        overflow: auto;
+        background: #ffffff;
+      }
+      #boss-ai-autofav-panel .baf-empty {
+        padding: 10px 4px;
+        color: #64748b;
+        font-size: 12px;
       }
       .baf-item {
         border-bottom: 1px solid #e5e7eb;
@@ -4176,7 +4416,15 @@
       .baf-action.exclude { color: #64748b; }
       .baf-action.skip { color: #dc2626; }
       .baf-small { color: #64748b; font-size: 12px; }
-      @media (max-width: 560px), (max-height: 620px) {
+      @media (max-width: 980px) {
+        #boss-ai-autofav-panel .baf-console-grid {
+          grid-template-columns: 1fr;
+        }
+        #boss-ai-autofav-panel .baf-advanced-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 760px), (max-height: 700px) {
         #boss-ai-autofav-panel {
           right: 8px;
           bottom: 8px;
@@ -4187,6 +4435,18 @@
         #boss-ai-autofav-panel.baf-collapsed {
           width: calc(100vw - 16px);
         }
+        #boss-ai-autofav-panel .baf-title {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        #boss-ai-autofav-panel .baf-title-actions,
+        #boss-ai-autofav-panel .baf-status-header,
+        #boss-ai-autofav-panel .baf-status-actions {
+          align-items: stretch;
+        }
+        #boss-ai-autofav-panel .baf-status-overview,
+        #boss-ai-autofav-panel .baf-status-detail-grid,
+        #boss-ai-autofav-panel .baf-console-subgrid,
         #boss-ai-autofav-panel .baf-grid,
         #boss-ai-autofav-panel .baf-feedback-grid {
           grid-template-columns: 1fr;
@@ -4201,26 +4461,24 @@
         #boss-ai-autofav-panel .baf-score-inline {
           justify-content: space-between;
         }
-        #boss-ai-autofav-panel .baf-current-action {
-          grid-template-columns: 1fr;
-        }
-        #boss-ai-autofav-panel .baf-current-action .baf-section-title {
-          grid-row: auto;
-        }
-        #boss-ai-autofav-panel .baf-protection-row {
-          align-items: stretch;
-          flex-direction: column;
-        }
-        #boss-ai-autofav-panel .baf-protection-row span {
-          white-space: normal;
-        }
-        #boss-ai-autofav-panel .baf-actions > button {
+        #boss-ai-autofav-panel .baf-actions > button,
+        #boss-ai-autofav-panel .baf-title-actions > button {
           flex: 1 1 96px;
+        }
+        #boss-ai-autofav-panel .baf-actions-primary {
+          width: 100%;
+        }
+        #boss-ai-autofav-panel .baf-actions-primary > button {
+          flex: 1 1 96px;
+        }
+        #boss-ai-autofav-panel #baf-protection-text,
+        #boss-ai-autofav-panel .baf-console-metric span:last-child {
+          white-space: normal;
         }
       }
       @media (max-height: 520px) {
         #boss-ai-autofav-panel .baf-status-card {
-          max-height: 132px;
+          max-height: 186px;
           overflow: auto;
         }
         #boss-ai-autofav-panel .baf-body {
@@ -5257,6 +5515,24 @@
       : state.campaign?.paused
         ? "已暂停，等待继续"
         : "等待开始扫描");
+    setText("#baf-runtime-mode-text", (() => {
+      const mode = panel?.dataset.scanMode || "current";
+      if (state.running) return mode === "task" ? "多关键词连续扫描中" : "当前列表扫描中";
+      if (state.campaign?.paused) return mode === "task" ? "多关键词已暂停" : "当前列表已暂停";
+      return mode === "task" ? "多关键词待命" : "当前列表待命";
+    })());
+    setText("#baf-runtime-keyword-text", (() => {
+      const typedKeywords = parseKeywordList(document.querySelector("#baf-keywords")?.value || "");
+      const currentKeyword = String(state.campaign?.keyword || "").trim();
+      if (currentKeyword) return `当前关键词：${currentKeyword}`;
+      if (typedKeywords.length) return `已配置 ${typedKeywords.length} 个搜索词`;
+      return "等待搜索词";
+    })());
+    setText("#baf-runtime-alert-text", state.errors > 0
+      ? `本次累计 ${state.errors} 个异常，请查看运行日志`
+      : favoriteFailureRecords().length > 0
+        ? `最近有 ${favoriteFailureRecords().length} 条收藏失败`
+        : "暂无异常");
     setText("#baf-last-result", recent
       ? `最近结果：${actionLabel(recent.action)}｜${recent.score}分｜${recent.title || ""}`
       : "最近结果：还没有岗位结果");

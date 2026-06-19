@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BOSS Auto Job UI 草图</title>
+  <style>
+    :root {
+      --bg: #eef3f8;
+      --panel: #ffffff;
+      --text: #102033;
+      --muted: #60758a;
+      --line: #d8e2ec;
+      --accent: #0f766e;
+      --accent-soft: #d8f3ef;
+      --blue: #2563eb;
+      --warn: #ea580c;
+      --danger: #dc2626;
+      --good: #16a34a;
+      --yellow: #d97706;
+      --shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(15,118,110,.10), transparent 28%),
+        radial-gradient(circle at top right, rgba(37,99,235,.08), transparent 26%),
+        var(--bg);
+      color: var(--text);
+    }
+    .page {
+      max-width: 1560px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 24px;
+    }
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+      line-height: 1.1;
+    }
+    .hero p {
+      margin: 0;
+      max-width: 720px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+    .legend {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .chip {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.78);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 22px;
+    }
+    .card {
+      background: rgba(255,255,255,.76);
+      border: 1px solid rgba(216,226,236,.95);
+      border-radius: 24px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .card h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+    .card .sub {
+      margin: 6px 0 16px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+      min-height: 42px;
+    }
+    .mockup {
+      background: linear-gradient(180deg, #f8fbfd 0%, #edf3f8 100%);
+      border: 1px solid #dbe6ef;
+      border-radius: 20px;
+      min-height: 760px;
+      overflow: hidden;
+    }
+    .titlebar {
+      height: 62px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #fff;
+    }
+    .title-left strong { display: block; font-size: 15px; }
+    .title-left span { display: block; margin-top: 3px; font-size: 11px; opacity: .86; }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.14);
+      border: 1px solid rgba(255,255,255,.22);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .content { padding: 16px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .panel-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      font-size: 14px;
+      font-weight: 800;
+    }
+    .tiny {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .metric-row,
+    .row {
+      display: grid;
+      gap: 10px;
+    }
+    .metric-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .metric {
+      background: #f6f9fc;
+      border: 1px solid #e3ebf3;
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .metric b {
+      display: block;
+      font-size: 19px;
+      margin-bottom: 4px;
+    }
+    .metric span { color: var(--muted); font-size: 12px; }
+    .row.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .field {
+      background: #f8fbfd;
+      border: 1px solid #dde7f0;
+      border-radius: 12px;
+      min-height: 44px;
+      padding: 10px 12px;
+      color: #4a6075;
+      font-size: 13px;
+    }
+    .field.large { min-height: 78px; }
+    .seg {
+      display: inline-flex;
+      background: #eef4fa;
+      border: 1px solid #dbe6f1;
+      border-radius: 12px;
+      padding: 4px;
+      gap: 4px;
+    }
+    .seg span {
+      padding: 8px 12px;
+      border-radius: 9px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #6b7f92;
+    }
+    .seg .active {
+      background: #fff;
+      color: #16344a;
+      box-shadow: 0 4px 10px rgba(15,23,42,.08);
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .btn {
+      height: 42px;
+      padding: 0 16px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 800;
+      border: 1px solid transparent;
+    }
+    .btn.primary { background: var(--accent); color: #fff; }
+    .btn.soft { background: #e7f1ff; color: #1d4ed8; }
+    .btn.warn { background: #fff2e8; color: var(--warn); border-color: #ffd8bf; }
+    .btn.gray { background: #f4f7fa; color: #53687d; border-color: #dde6ef; }
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+    .list-item {
+      background: #f8fbfd;
+      border: 1px solid #dfe8f1;
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .list-item strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 13px;
+    }
+    .badge-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 7px;
+    }
+    .badge {
+      padding: 5px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .green { background: #e8f8ee; color: var(--good); }
+    .yellow { background: #fff5dd; color: var(--yellow); }
+    .red { background: #feecec; color: var(--danger); }
+    .slate { background: #eef3f7; color: #60758a; }
+    .footer-note {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 14px;
+      background: #f6fafb;
+      border: 1px dashed #cfe1df;
+      color: #5a7384;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .a .titlebar { background: linear-gradient(135deg, #0f766e, #155e75); }
+    .b .titlebar { background: linear-gradient(135deg, #111827, #1f2937); }
+    .c .titlebar { background: linear-gradient(135deg, #1d4ed8, #2563eb); }
+    .stack { display: grid; gap: 12px; }
+    .mini-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .mini {
+      background: #f8fbfd;
+      border: 1px solid #e1eaf2;
+      border-radius: 12px;
+      padding: 10px;
+      min-height: 64px;
+    }
+    .compare {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .compare .mini {
+      min-height: 120px;
+    }
+    @media (max-width: 1280px) {
+      .grid { grid-template-columns: 1fr; }
+      .mockup { min-height: auto; }
+      .compare { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <div>
+        <h1>BOSS 岗位助手 UI 重设计方向草图</h1>
+        <p>下面是 3 个方向的“大概样子图”。它们不是最终视觉稿，主要帮你快速判断布局、信息层级和整体气质。你看完只要告诉我想走 A、B、C，或者说“要 A 的结构 + C 的视觉”，我就按那个方向重做正式 UI。</p>
+      </div>
+      <div class="legend">
+        <span class="chip">A 更像工作台</span>
+        <span class="chip">B 更像专业控制台</span>
+        <span class="chip">C 更轻更现代</span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <section class="card a">
+        <h2>方案 A: 工作台型</h2>
+        <p class="sub">推荐。最强调“当前要做什么”，适合日常高频使用。状态、关键词、启动动作都放在最显眼的位置。</p>
+        <div class="mockup">
+          <div class="titlebar">
+            <div class="title-left">
+              <strong>岗位粗筛工作台</strong>
+              <span>今天进度、当前模式、最近动作一屏看清</span>
+            </div>
+            <div class="status-pill"><span class="dot" style="background:#22c55e"></span>扫描中</div>
+          </div>
+          <div class="content">
+            <div class="panel">
+              <div class="panel-title">今日概览 <span class="tiny">先看结果，再决定下一步</span></div>
+              <div class="metric-row">
+                <div class="metric"><b>128</b><span>已扫描</span></div>
+                <div class="metric"><b>17</b><span>已收藏</span></div>
+                <div class="metric"><b>24</b><span>待复核</span></div>
+                <div class="metric"><b>3</b><span>异常</span></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">当前目标</div>
+              <div class="row two">
+                <div class="field">岗位性质：销售 / 客户成功</div>
+                <div class="field">目标方向：AI 外呼、客服 SaaS、企业服务</div>
+              </div>
+              <div class="row" style="margin-top:10px">
+                <div class="field large">搜索词：AI 客服销售 / 智能外呼销售 / SaaS 客户成功 / AI 解决方案销售 / 智能客服实施顾问</div>
+              </div>
+              <div class="actions">
+                <div class="btn primary">生成搜索词</div>
+                <div class="btn soft">生成加分词 / 排除词</div>
+                <div class="btn gray">复制配置摘要</div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">开始工作</div>
+              <div class="seg">
+                <span class="active">当前列表</span>
+                <span>多关键词任务</span>
+                <span>高级规则</span>
+              </div>
+              <div class="actions">
+                <div class="btn primary">启动 / 继续</div>
+                <div class="btn warn">暂停</div>
+                <div class="btn gray">复制表格</div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">最近判断</div>
+              <div class="list">
+                <div class="list-item">
+                  <strong>88 分｜AI 客服销售</strong>
+                  <div class="tiny">命中目标方向和岗位性质，建议直接收藏。</div>
+                  <div class="badge-row"><span class="badge green">已收藏</span><span class="badge slate">详情已切换</span></div>
+                </div>
+                <div class="list-item">
+                  <strong>61 分｜SaaS 客户成功</strong>
+                  <div class="tiny">方向相关，但岗位描述偏交付，建议人工看一眼。</div>
+                  <div class="badge-row"><span class="badge yellow">待复核</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="footer-note">感觉：最像一个“工作台”。优点是逻辑很清楚，新用户也不容易迷路。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card b">
+        <h2>方案 B: 专业控制台型</h2>
+        <p class="sub">更强工具感。信息密度更高，适合你经常调规则、看日志、改策略、做排查。</p>
+        <div class="mockup">
+          <div class="titlebar">
+            <div class="title-left">
+              <strong>岗位筛选控制台</strong>
+              <span>参数、运行状态、日志、导出全部集中</span>
+            </div>
+            <div class="status-pill"><span class="dot" style="background:#facc15"></span>已暂停</div>
+          </div>
+          <div class="content">
+            <div class="panel">
+              <div class="panel-title">主控区</div>
+              <div class="row two">
+                <div class="field">岗位性质：销售 / 售前 / 客户成功</div>
+                <div class="field">目标方向：机器人 / AI 外呼 / 教育 SaaS</div>
+              </div>
+              <div class="row two" style="margin-top:10px">
+                <div class="field">收藏阈值：60 分</div>
+                <div class="field">每词上限：100｜今日上限：500</div>
+              </div>
+              <div class="actions">
+                <div class="btn primary">启动任务</div>
+                <div class="btn warn">暂停任务</div>
+                <div class="btn soft">导出诊断</div>
+              </div>
+            </div>
+            <div class="stack">
+              <div class="panel">
+                <div class="panel-title">任务状态</div>
+                <div class="mini-grid">
+                  <div class="mini"><strong>关键词 2/8</strong><div class="tiny">当前：智能外呼销售</div></div>
+                  <div class="mini"><strong>本轮 43/100</strong><div class="tiny">当前词进度</div></div>
+                  <div class="mini"><strong>异常 1</strong><div class="tiny">等待人工处理</div></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">规则与日志并排查看</div>
+                <div class="row two">
+                  <div class="field large">正向词：AI 外呼 / SaaS / 企业客户 / 客户成功 / 解决方案</div>
+                  <div class="field large">排除词：保险 / 贷款 / 招生 / 课程销售 / 电话销售</div>
+                </div>
+                <div class="field large" style="margin-top:10px">运行日志：keyword_results_ready / llm_judgement_failed / favorite_clicked / detail_confirmed ...</div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">最近结果</div>
+                <div class="list">
+                  <div class="list-item"><strong>错误 0 分｜测试工程师</strong><div class="tiny">详情未切换，已阻止旧详情判断。</div><div class="badge-row"><span class="badge red">异常</span></div></div>
+                  <div class="list-item"><strong>73 分｜AI 解决方案销售</strong><div class="tiny">方向强相关，已自动收藏。</div><div class="badge-row"><span class="badge green">已收藏</span></div></div>
+                </div>
+              </div>
+            </div>
+            <div class="footer-note">感觉：最像“重度用户面板”。优点是强大，缺点是第一次看会比 A 更硬核。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card c">
+        <h2>方案 C: 极简悬浮型</h2>
+        <p class="sub">更轻、更像浏览器插件。默认不压页面，常用操作放前面，高级功能折叠进抽屉。</p>
+        <div class="mockup">
+          <div class="titlebar">
+            <div class="title-left">
+              <strong>岗位助手</strong>
+              <span>悬浮轻量，不打断页面浏览</span>
+            </div>
+            <div class="status-pill"><span class="dot" style="background:#94a3b8"></span>待命</div>
+          </div>
+          <div class="content">
+            <div class="panel">
+              <div class="panel-title">一眼看懂现在能做什么</div>
+              <div class="field large">当前搜索词：AI 解决方案销售 / SaaS 客户成功 / 智能外呼销售</div>
+              <div class="actions">
+                <div class="btn primary">开始扫描</div>
+                <div class="btn soft">生成搜索词</div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">紧凑信息卡</div>
+              <div class="row two">
+                <div class="metric"><b>17</b><span>今日收藏</span></div>
+                <div class="metric"><b>24</b><span>待复核</span></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">最近结果</div>
+              <div class="list">
+                <div class="list-item">
+                  <strong>AI 客户成功</strong>
+                  <div class="badge-row"><span class="badge green">84 分</span><span class="badge green">已收藏</span></div>
+                </div>
+                <div class="list-item">
+                  <strong>机器人售前顾问</strong>
+                  <div class="badge-row"><span class="badge yellow">58 分</span><span class="badge yellow">待复核</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">展开更多</div>
+              <div class="seg">
+                <span class="active">搜索词</span>
+                <span>高级规则</span>
+                <span>日志导出</span>
+              </div>
+            </div>
+            <div class="footer-note">感觉：最像一个精致插件。优点是轻巧好看，缺点是重度操作时层级会比 A、B 更深。</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="compare">
+      <div class="mini">
+        <strong>A 适合谁</strong>
+        <div class="tiny">想要更好看，但更重要的是顺手、清楚、容易上手。你每天主要做的是“看状态、改搜索词、启动任务、看最近结果”。</div>
+      </div>
+      <div class="mini">
+        <strong>B 适合谁</strong>
+        <div class="tiny">你经常调规则、看日志、导出诊断、排查异常，希望一个面板里把控制权拉满。</div>
+      </div>
+      <div class="mini">
+        <strong>C 适合谁</strong>
+        <div class="tiny">你很在意“不挡页面”和插件感，希望默认轻量，只在需要时展开复杂功能。</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
