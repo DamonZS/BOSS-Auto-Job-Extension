@@ -53,6 +53,7 @@ const GITHUB_LATEST_RELEASE_API = "https://api.github.com/repos/DamonZS/BOSS-Aut
 const GITHUB_RELEASES_URL = "https://github.com/DamonZS/BOSS-Auto-Job-Extension/releases";
 const GITHUB_MAIN_MANIFEST_URL = "https://raw.githubusercontent.com/DamonZS/BOSS-Auto-Job-Extension/main/manifest.json";
 const GITHUB_MAIN_ZIP_URL = "https://github.com/DamonZS/BOSS-Auto-Job-Extension/archive/refs/heads/main.zip";
+const GITHUB_FETCH_TIMEOUT_MS = 8000;
 
 function compareVersions(left, right) {
   const leftParts = String(left || "").replace(/^v/i, "").split(/[.-]/).map(part => Number(part) || 0);
@@ -86,11 +87,11 @@ async function checkGithubUpdate(currentVersion) {
 }
 
 async function checkGithubReleaseUpdate(currentVersion) {
-  const response = await fetch(GITHUB_LATEST_RELEASE_API, {
+  const response = await fetchWithTimeout(GITHUB_LATEST_RELEASE_API, {
     headers: {
       "Accept": "application/vnd.github+json"
     }
-  });
+  }, GITHUB_FETCH_TIMEOUT_MS);
   const rawText = await response.text();
   const data = safeJsonParse(rawText);
   if (!response.ok) {
@@ -110,9 +111,9 @@ async function checkGithubReleaseUpdate(currentVersion) {
 }
 
 async function checkMainManifestUpdate(currentVersion) {
-  const response = await fetch(GITHUB_MAIN_MANIFEST_URL, {
+  const response = await fetchWithTimeout(GITHUB_MAIN_MANIFEST_URL, {
     cache: "no-store"
-  });
+  }, GITHUB_FETCH_TIMEOUT_MS);
   const rawText = await response.text();
   const data = safeJsonParse(rawText);
   if (!response.ok) {
@@ -128,6 +129,24 @@ async function checkMainManifestUpdate(currentVersion) {
     releaseUrl: GITHUB_MAIN_ZIP_URL,
     source: "main"
   };
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`请求超时：${Math.round(timeoutMs / 1000)} 秒内 GitHub 未响应`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

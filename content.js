@@ -3283,13 +3283,13 @@
       <div class="baf-title">
         <div class="baf-title-main">
           <div class="baf-brand-row">
-            <strong>BOSS Auto Console <span class="baf-version">v2.0.8</span></strong>
+            <strong>BOSS Auto Console <span class="baf-version">v2.0.9</span></strong>
             <span class="baf-brand-tag">专业控制台</span>
           </div>
           <span>职位列表自动筛选、收藏与复核</span>
           <div id="baf-version-panel" class="baf-title-version">
             <span id="baf-version-message" class="baf-title-version-message">版本检测</span>
-            <span id="baf-version-current">v${escapeHtml(chrome.runtime?.getManifest?.().version || "2.0.8")}</span>
+            <span id="baf-version-current">v${escapeHtml(chrome.runtime?.getManifest?.().version || "2.0.9")}</span>
             <span id="baf-version-latest">GitHub 未检测</span>
             <span id="baf-version-checked-at">未检测</span>
             <button id="baf-check-update" type="button">检测</button>
@@ -5168,7 +5168,7 @@
   }
 
   function currentExtensionVersion() {
-    return String(chrome.runtime?.getManifest?.().version || "2.0.8");
+    return String(chrome.runtime?.getManifest?.().version || "2.0.9");
   }
 
   function formatUpdateCheckedAt(value) {
@@ -5218,20 +5218,34 @@
         reject(new Error("当前扩展环境不支持后台更新检测"));
         return;
       }
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("后台版本检测超时，请检查网络或扩展后台是否已重新加载"));
+      }, 12000);
+      const finish = callback => value => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        callback(value);
+      };
+      const resolveOnce = finish(resolve);
+      const rejectOnce = finish(reject);
       chrome.runtime.sendMessage({
         type: "boss-check-update",
         currentVersion: currentExtensionVersion()
       }, response => {
         const lastError = chrome.runtime.lastError;
         if (lastError) {
-          reject(new Error(lastError.message));
+          rejectOnce(new Error(lastError.message));
           return;
         }
         if (!response?.ok) {
-          reject(new Error(response?.error || "GitHub 更新检测失败"));
+          rejectOnce(new Error(response?.error || "GitHub 更新检测失败"));
           return;
         }
-        resolve(response);
+        resolveOnce(response);
       });
     });
   }

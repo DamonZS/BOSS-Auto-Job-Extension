@@ -201,7 +201,7 @@ assertIncludes(panelSource, "baf-version-latest", "panel should show the latest 
 assertIncludes(panelSource, "baf-version-checked-at", "panel should show the update check time");
 assertIncludes(panelSource, "baf-check-update", "panel should expose a manual update check button");
 assertIncludes(panelSource, "baf-open-release", "panel should expose a one-click releases button");
-assertIncludes(panelSource, "v2.0.8", "panel should display the bumped extension version");
+assertIncludes(panelSource, "v2.0.9", "panel should display the bumped extension version");
 assertIncludes(panelSource, "baf-about-box", "advanced rules should include an about box");
 assertIncludes(panelSource, "https://api.toporeduce.cn", "about box should link to TopoReduce");
 assertIncludes(panelSource, "招聘与技术交流 QQ 群", "about box should include a QQ group entry");
@@ -244,11 +244,15 @@ assertIncludes(judgeJobWithLlmSource, "1-100", "LLM prompt should ask for free 1
 assertIncludes(judgeJobWithLlmSource, "不要只给 55、60、70", "LLM prompt should avoid coarse threshold-only scores");
 
 assertIncludes(backgroundSource, "function extractResponseContent", "background should normalize LLM response content");
-assertIncludes(manifestSource, "\"version\": \"2.0.8\"", "manifest version should be bumped for each released change");
+assertIncludes(manifestSource, "\"version\": \"2.0.9\"", "manifest version should be bumped for each released change");
 assertIncludes(manifestSource, "https://api.github.com/*", "manifest should allow GitHub API requests for update checks");
 assertIncludes(manifestSource, "https://raw.githubusercontent.com/*", "manifest should allow raw manifest fallback requests");
 assertIncludes(source, "event.stopPropagation();", "version buttons should not trigger panel drag handlers");
 assertIncludes(source, "button.textContent = \"检测中\"", "update check button should show visible progress");
+assertIncludes(source, "后台版本检测超时", "update check should time out if the background never responds");
+assertIncludes(backgroundSource, "function fetchWithTimeout", "background should wrap GitHub fetches with a timeout");
+assertIncludes(backgroundSource, "AbortController", "background fetch timeout should abort hanging GitHub requests");
+assertIncludes(backgroundSource, "请求超时", "background should report GitHub timeout clearly");
 assertIncludes(backgroundSource, "boss-check-update", "background should handle GitHub version checks");
 assertIncludes(backgroundSource, "api.github.com/repos/DamonZS/BOSS-Auto-Job-Extension/releases/latest", "background should query GitHub latest release");
 assertIncludes(backgroundSource, "raw.githubusercontent.com/DamonZS/BOSS-Auto-Job-Extension/main/manifest.json", "background should fall back to main branch manifest when releases are unavailable");
