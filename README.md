@@ -1,5 +1,4 @@
-飞书交流群
-<img width="441" height="401" alt="image" src="https://github.com/user-attachments/assets/9b023d13-4f9c-4680-9033-162dfc18643f" />微信交流群<img width="1029" height="866" alt="d8ce804099b3e82a450633ab93a4a092" src="https://github.com/user-attachments/assets/53057590-fbd9-42b7-90f5-f753c254111a" />
+微信交流群<img width="1029" height="866" alt="d8ce804099b3e82a450633ab93a4a092" src="https://github.com/user-attachments/assets/53057590-fbd9-42b7-90f5-f753c254111a" />
 # BOSS-Auto-Job-Extension
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-0f766e)](manifest.json)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-2563eb)](manifest.json)
